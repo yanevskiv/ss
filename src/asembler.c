@@ -6,6 +6,7 @@
 #include <ctype.h>
 #include <asembler.h>
 #include <elf.h>
+#include <stdarg.h>
 #define MAX_ASM_ARGS 100
 #define MAX_ASM_SECTIONS 100
 #define ARR_SIZE(arr) (sizeof((arr)) / sizeof((arr)[0]))
@@ -28,6 +29,7 @@
         fprintf(stdout, "\n"); \
         fflush(stderr); \
     } while (0)
+
 
 typedef struct buf_s {
     char *b_buffer;
@@ -114,6 +116,25 @@ section_t *section_new(const char *name)
 }
 
 
+
+
+int strsel(const char *str, ...) {
+    va_list va;
+    va_start(va, str);
+    int index = 0;
+    char *arg = va_arg(va, char*);
+    while (arg)  {
+        if (strcmp(arg, str) == 0) {
+            va_end(va);
+            return index;
+        }
+
+        index += 1;
+        arg = va_arg(va, char*);
+    }
+    va_end(va);
+    return -1;
+}
 typedef struct label_t {
     char *l_name;
 } label_t;
@@ -152,12 +173,89 @@ void Str_RmQuotes(char *str)
     }
 }
 
+char *Str_Substr(char *str, int from, int to)
+{
+    int len = strlen(str);
+    if (from > to)  {
+        int tmp = from;
+        from = to;
+        to = from;
+    }
+    if (from < 0) 
+        from = 0;
+    if (from > len)
+        from = len;
+    if (to < 0)
+        to = len;
+    char *substr = calloc(to - from + 1, sizeof(char));
+    assert(substr != NULL);
+    strncpy(substr, str + from, to - from);
+    return substr;
+}
+
+Elf_Byte Asm_ParseRegOperand(char *arg)
+{
+    regex_t re_reg;
+    regmatch_t matches[MAX_REGEX_MATCHES];
+    if (regcomp(&re_reg, "^r([0-9])$", REG_EXTENDED)) {
+        fprintf(stderr, "Error (Assembler): Failed compiling regex for registers\n");
+        return 0xf;
+    }
+    if (regexec(&re_reg, arg, ARR_SIZE(matches), matches, 0) == 0) {
+        return arg[1] - '0';
+    }
+    return 0xf;
+}
+
+int Str_RegMatch(const char *str, const char *re, int match_count, regmatch_t *matches) 
+{
+    regex_t regex; 
+    if (regcomp(&regex, re, REG_EXTENDED))  {
+        fprintf(stderr, "Error (Assembler): Failed to compile regex '%s'\n", re);
+        return 0;
+    }
+    int result = 0;
+    if (regexec(&regex, str, match_count, matches, 0) == 0) {
+        result = 1;
+    }
+    regfree(&regex);
+    return result;
+}
+
+int Str_ParseInt(const char *str) {
+    int sign = 1;
+    if (*str == '+') {
+        str ++;
+    }
+    if (*str == '-') {
+        sign = -1;
+        str ++;
+    }
+    int value = 0;
+    if (*str == '0')  {
+        // If 0 is the only character, the value is 0
+        if (*(str + 1) == '\0') 
+            return 0;
+
+        // Potentially octal or hexadecimal
+        if (*(str + 1) == 'x')  {
+            // Hexadecimal
+            return sign * strtol(str + 2, NULL, 16);
+        } else {
+            // Octal
+            return sign * strtol(str + 1, NULL, 8);
+        }
+    } else {
+        // Decimal
+        return sign * strtol(str, NULL, 10);
+    }
+    return value;
+}
+
+
 void Asm_Compile(Elf_Builder *elf, FILE *input, int flags)
 {
-    /*
-     * Init elf
-     */
-
+    // Init variables used for line reading
     int linenum = 0;
     int nread = 0;
     char *line = NULL;
@@ -181,22 +279,21 @@ void Asm_Compile(Elf_Builder *elf, FILE *input, int flags)
         fprintf(stderr, "Error compiling regex for comments\n");
         return;
     }
-    // \\s*([^ :]*:)?\\s*(.?[a-zA-Z]+)\\s*(.*)?(a.*#)?$
     if (regcomp(&re_instr, "^\\s*(.?[^ \t]+)\\s*", REG_EXTENDED)) {
         fprintf(stderr, "Error compiling regex for instructions\n");
         return;
     }
-
     if (regcomp(&re_isnum, "^\\s*([-+]?[0-9]+)\\s*$", REG_EXTENDED)) {
         fprintf(stderr, "Error compiling regex for numbers\n");
         return;
     }
 
+
     enum {
-        MODE_OK,
-        MODE_QUIT
+        MODE_OK,  // Default
+        MODE_QUIT // This mode will be set on .end directive
     };
-    int mode = MODE_OK;
+    int mode = MODE_OK; 
     while (mode != MODE_QUIT && (nread = getline(&line, &linelen, input)) != -1) {
         /*
          * read line
@@ -212,6 +309,11 @@ void Asm_Compile(Elf_Builder *elf, FILE *input, int flags)
         char *instr = NULL;
         char *args[MAX_ASM_ARGS];
         int argc = 0;
+        enum {
+            AT_LITERAL,
+            AT_SYMBOL,
+        };
+        int argt[MAX_ASM_ARGS]; // Arg types
 
         // Skip empty or comment lines
         if (regexec(&re_empty, lbuf, ARR_SIZE(matches), matches, 0) == 0) {
@@ -253,9 +355,8 @@ void Asm_Compile(Elf_Builder *elf, FILE *input, int flags)
 
             // Skip instruction
             lbuf += (matches[0].rm_eo - matches[0].rm_so);
-            // Read arguments
-            //printf("Instr: '%s' ", instr);
 
+            // Read arguments
             char *arg = strtok(lbuf, ",");
             while (arg) {
                 args[argc] = strdup(arg);
@@ -309,11 +410,13 @@ void Asm_Compile(Elf_Builder *elf, FILE *input, int flags)
                     }
                 } else if (strcmp(instr, ".skip") == 0) {
                     debug(".skip directive on line %d", linenum);
+                    Str_RmSpaces(args[0]);
+                    int count = Str_ParseInt(args[0]);
+                    Elf_PushSkip(elf, count, 0x00);
                 } else if (strcmp(instr, ".ascii") == 0) {
                     debug(".ascii directive on line %d", linenum);
                     char *arg = args[0];
                     Str_RmQuotes(arg);
-                    printf("(%s)", arg);
                     Elf_PushString(elf, arg);
                 } else if (strcmp(instr, ".equ") == 0) {
                     // NOT IMPLEMENTED
@@ -323,34 +426,393 @@ void Asm_Compile(Elf_Builder *elf, FILE *input, int flags)
                     error("Unknown directive '%s' at line %d\n", instr, linenum);
                 }
             } else {
+                // Parse the arguments
+                int i;
+                Asm_Instr ai;
+
+                // Don't need spaces
+                for (i = 0; i < argc; i++) {
+                    Str_RmSpaces(args[i]);
+                }
+
+                // Push instruction
+                bzero(&ai, sizeof(ai));
+
+                int index = 0;
                 if (strcmp(instr, "halt") == 0) {
+                    // Halt instruction
+                    ai.ai_oc = 0x0;
+                    ai.ai_mod = 0x0;
+                    Elf_PushByte(elf, ai.ai_instr);
                 } else if (strcmp(instr, "int") == 0) {
+                    // Software interrupt instruction
+                    Str_RmSpaces(args[0]);
+                    ai.ai_oc = 0x1;
+                    ai.ai_mod = 0x0;
+                    ai.ai_rd = Asm_ParseRegOperand(args[0]);
+                    ai.ai_rs = 0xf;
+                    Elf_PushByte(elf, ai.ai_instr);
+                    Elf_PushByte(elf, ai.ai_regdesc);
                 } else if (strcmp(instr, "iret") == 0) {
-                } else if (strcmp(instr, "call") == 0) {
+                    // Return from interrupt instruction
+                    ai.ai_oc = 0x2;
+                    ai.ai_mod = 0x0;
+                    Elf_PushByte(elf, ai.ai_instr);
                 } else if (strcmp(instr, "ret") == 0) {
-                } else if (strcmp(instr, "jmp") == 0) {
-                } else if (strcmp(instr, "jeq") == 0) {
-                } else if (strcmp(instr, "jne") == 0) {
-                } else if (strcmp(instr, "jgt") == 0) {
+                    // Return from function instructio
+                    ai.ai_oc = 0x4;
+                    ai.ai_mod = 0;
+                    Elf_PushByte(elf, ai.ai_instr);
+                } else if ((index = strsel(instr, "call", "jmp", "jeq", "jne", "jgt", NULL)) != -1) {
+                    // Jump instruction
+                    if (index == 1) {
+                        // Call
+                        ai.ai_oc = 0x3;
+                        ai.ai_mod = 0x0;
+                    } else {
+                        // Jmp instructions
+                        ai.ai_oc = 0x5;
+                        ai.ai_mod = index & 0xf;
+                    }
+                    if (Str_RegMatch(args[0], "^\\*(r[0-9])$", ARR_SIZE(matches), matches)) {
+                        /* *<reg> */
+
+                        // Parse register
+                        char *reg_str = Str_Substr(args[0], matches[1].rm_so, matches[1].rm_eo);
+                        ai.ai_rd = 0xf;
+                        ai.ai_rs = Asm_ParseRegOperand(reg_str);
+                        free(reg_str);
+
+                        // Set addr mode
+                        ai.ai_am = ASM_AM_REGDIR;
+                        ai.ai_up = ASM_UP_NONE;
+
+                        // Push bytes
+                        Elf_PushByte(elf, ai.ai_instr);
+                        Elf_PushByte(elf, ai.ai_regdesc);
+                        Elf_PushByte(elf, ai.ai_addrmode);
+                    } else if (Str_RegMatch(args[0], "^\\*?([0-9a-fA-FxX]+)$", ARR_SIZE(matches), matches)) {
+                        /* <literal> | *<literal> */
+
+                        // Registers are unused
+                        ai.ai_rd = 0xf;
+                        ai.ai_rs = 0xf;
+
+                        // Set addr mode
+                        ai.ai_am = (*args[0] == '*') 
+                            ? ASM_AM_MEMORY
+                            : ASM_AM_REGDIR;
+                        ai.ai_up = ASM_UP_NONE;
+
+                        // Parse payload
+                        char *payload_str = Str_Substr(args[0], matches[1].rm_so, matches[1].rm_eo);
+                        int payload = Str_ParseInt(payload_str);
+                        free(payload_str);
+                        
+                        // Push bytes
+                        Elf_PushByte(elf, ai.ai_instr);
+                        Elf_PushByte(elf, ai.ai_regdesc);
+                        Elf_PushByte(elf, ai.ai_addrmode);
+                        Elf_PushByte(elf, payload >> 8);
+                        Elf_PushByte(elf, payload & 0xff);
+                    } else if (Str_RegMatch(args[0], "^[%*]?([^0-9][._a-zA-Z0-9]*)$", ARR_SIZE(matches), matches)) {
+                        /* <symbol> | *<symbol> | %<symbol> */
+
+                        // Registers are unused
+                        // Except if it's PC relative, then we use the PC register
+                        // Which is register number 0x7
+                        ai.ai_rs = (*args[0] == '%') 
+                            ? 0x7
+                            : 0xf;
+                        ai.ai_rd = 0xf;
+
+                        // Set addr mode
+                        ai.ai_am = (*args[0] == '*') ? ASM_AM_MEMORY
+                            : (*args[0] == '%') ? ASM_AM_REGDIR16
+                            : ASM_AM_REGDIR;
+                        ai.ai_up = ASM_UP_NONE;
+
+                        // Get symbol name symbol
+                        char *sym_name= Str_Substr(args[0], matches[1].rm_so, matches[1].rm_eo);
+                        printf("%s\n", sym_name);
+
+                        // Add rela
+                        int rela_type = (*args[0] == '%') 
+                            ? R_X86_64_PC16 
+                            : R_X86_64_16;
+                        Elf_PushSection(elf);
+                        Elf_Rela *rela = Elf_AddRelaSymb(elf, sym_name);
+                        rela->r_addend = 3;
+                        rela->r_info = ELF_R_INFO(ELF_R_SYM(rela->r_info), rela_type);
+                        Elf_PopSection(elf);
+
+                        // Free symbol name memory
+                        free(sym_name);
+
+                        // Push bytes
+                        Elf_PushByte(elf, ai.ai_instr);
+                        Elf_PushByte(elf, ai.ai_regdesc);
+                        Elf_PushByte(elf, ai.ai_addrmode);
+                        // Next two bytes will be replaced by Rela
+                        Elf_PushByte(elf, 0);
+                        Elf_PushByte(elf, 0);
+                    } else if (Str_RegMatch(args[0], "^[*]\\[(r[0-9])\\]$", ARR_SIZE(matches), matches)) {
+                        /* *[ <reg> ]*/
+
+                        // Parse register
+                        char *reg_str = Str_Substr(args[0], matches[1].rm_so, matches[1].rm_eo);
+                        ai.ai_rd = 0xf;
+                        ai.ai_rs = Asm_ParseRegOperand(reg_str);
+                        free(reg_str);
+
+                        // Set addr mode
+                        ai.ai_am = ASM_AM_REGIND;
+                        ai.ai_up = ASM_UP_NONE;
+
+                        // Push bytes
+                        Elf_PushByte(elf, ai.ai_instr);
+                        Elf_PushByte(elf, ai.ai_regdesc);
+                        Elf_PushByte(elf, ai.ai_addrmode);
+                    } else if (Str_RegMatch(args[0], "^[*]\\[(r[0-9])\\+([0-9a-fA-FxX]+)\\]$", ARR_SIZE(matches), matches)) {
+                        /* *[ <reg> + <literal> ] */
+
+                        // Parse register
+                        char *reg_str = Str_Substr(args[0], matches[1].rm_so, matches[1].rm_eo);
+                        ai.ai_rd = 0xf;
+                        ai.ai_rs = Asm_ParseRegOperand(reg_str);
+                        free(reg_str);
+
+                        // Parse payload
+                        char *payload_str = Str_Substr(args[1], matches[1].rm_so, matches[1].rm_eo);
+                        int payload = Str_ParseInt(payload_str);
+                        free(payload_str);
+
+                        // Set addr mode
+                        ai.ai_am = ASM_AM_REGIND16;
+                        ai.ai_up = ASM_UP_NONE;
+
+                        // Push bytes
+                        Elf_PushByte(elf, ai.ai_instr);
+                        Elf_PushByte(elf, ai.ai_regdesc);
+                        Elf_PushByte(elf, ai.ai_addrmode);
+                        Elf_PushByte(elf, payload >> 8);
+                        Elf_PushByte(elf, payload & 0xff);
+                    } else if (Str_RegMatch(args[0], "^[*]\\[(r[0-9])\\+([^0-9][._a-zA-Z0-9]*)]$", ARR_SIZE(matches), matches)) {
+                        /* *[ <reg> + <symbol> ] */
+
+                        // Parse register
+                        char *reg_str = Str_Substr(args[0], matches[1].rm_so, matches[1].rm_eo);
+                        ai.ai_rd = 0xf;
+                        ai.ai_rs = Asm_ParseRegOperand(reg_str);
+                        free(reg_str);
+
+                        // Get symbol name
+                        char *sym_name= Str_Substr(args[1], matches[1].rm_so, matches[1].rm_eo);
+
+                        // Add rela
+                        int rela_type = (*args[0] == '%') 
+                            ? R_X86_64_PC16 
+                            : R_X86_64_16;
+                        Elf_PushSection(elf);
+                        Elf_Rela *rela = Elf_AddRelaSymb(elf, sym_name);
+                        rela->r_addend = 3;
+                        rela->r_info = ELF_R_INFO(ELF_R_SYM(rela->r_info), rela_type);
+                        Elf_PopSection(elf);
+
+                        // Free symbol name memory
+                        free(sym_name);
+
+                        // Set addr mode
+                        ai.ai_am = ASM_AM_REGIND16;
+                        ai.ai_up = ASM_UP_NONE;
+
+                        // Push bytes
+                        Elf_PushByte(elf, ai.ai_instr);
+                        Elf_PushByte(elf, ai.ai_regdesc);
+                        Elf_PushByte(elf, ai.ai_addrmode);
+                        // Next two bytes will be replaced by Rela
+                        Elf_PushByte(elf, 0);
+                        Elf_PushByte(elf, 0);
+                    } else {
+                        fprintf(stderr, "Error (Assembler): Bad syntax for instruction '%s' at line %d\n", instr, linenum);
+                    }
                 } else if (strcmp(instr, "push") == 0) {
+                    // Push instruction
                 } else if (strcmp(instr, "pop") == 0) {
+                    // Pop instruction
                 } else if (strcmp(instr, "xchg") == 0) {
-                } else if (strcmp(instr, "add") == 0) {
-                } else if (strcmp(instr, "sub") == 0) {
-                } else if (strcmp(instr, "mul") == 0) {
-                } else if (strcmp(instr, "div") == 0) {
-                } else if (strcmp(instr, "cmp") == 0) {
-                } else if (strcmp(instr, "not") == 0) {
-                } else if (strcmp(instr, "and") == 0) {
-                } else if (strcmp(instr, "or") == 0) {
-                } else if (strcmp(instr, "xor") == 0) {
-                } else if (strcmp(instr, "test") == 0) {
-                } else if (strcmp(instr, "shl") == 0) {
-                } else if (strcmp(instr, "shr") == 0) {
-                } else if (strcmp(instr, "ldr") == 0) {
-                } else if (strcmp(instr, "str") == 0) {
+                    // Exchange value instruction
+                    ai.ai_oc = 0x6;
+                    ai.ai_mod = 0x0;
+                    ai.ai_rs = Asm_ParseRegOperand(args[0]);
+                    ai.ai_rd = Asm_ParseRegOperand(args[1]);
+                    Elf_PushByte(elf, ai.ai_instr);
+                    Elf_PushByte(elf, ai.ai_regdesc);
+                } else if ((index = strsel(instr, "add", "sub", "mul", "div", "cmp", NULL)) != -1) {
+                    // Arithmetic instruction
+                    ai.ai_oc = 0x7;
+                    ai.ai_mod = index & 0xf;
+                    ai.ai_rs = Asm_ParseRegOperand(args[0]);
+                    ai.ai_rd = Asm_ParseRegOperand(args[1]);
+                    Elf_PushByte(elf, ai.ai_instr);
+                    Elf_PushByte(elf, ai.ai_regdesc);
+                } else if ((index = strsel(instr, "not", "and", "or", "xor", "test", NULL)) != -1) {
+                    // Logic instruction
+                    ai.ai_oc = 0x8;
+                    ai.ai_mod = index & 0xf;
+                    ai.ai_rs = Asm_ParseRegOperand(args[0]);
+                    ai.ai_rd = Asm_ParseRegOperand(args[1]);
+                    Elf_PushByte(elf, ai.ai_instr);
+                    Elf_PushByte(elf, ai.ai_regdesc);
+                } else if ((index = strsel(instr, "shl", "shr", NULL)) != -1) {
+                    // Shift instruction
+                    ai.ai_oc = 0x9;
+                    ai.ai_mod = index & 0xf;
+                    ai.ai_rs = Asm_ParseRegOperand(args[0]);
+                    ai.ai_rd = Asm_ParseRegOperand(args[1]);
+                    Elf_PushByte(elf, ai.ai_instr);
+                    Elf_PushByte(elf, ai.ai_regdesc);
+                } else if ((index = strsel(instr, "ldr", "str", NULL)) != -1) {
+                    ai.ai_oc = 0xa + index; // 0xa or 0xb
+                    ai.ai_mod = 0x0;
+                    ai.ai_rd = Asm_ParseRegOperand(args[0]);
+                    // Parse second operarnd 
+                    if (Str_RegMatch(args[1], "^\\$?([0-9a-fA-FxX]+)$", ARR_SIZE(matches), matches)) {
+                        /* $<literal> */
+
+                        // Source register is unused
+                        ai.ai_rs = 0xf;
+
+                        // Set addr type 
+                        ai.ai_am = (*args[1] == '$') ? ASM_AM_IMMED : ASM_AM_MEMORY; // Immediate or Memory
+                        ai.ai_up = 0x0; // no change
+
+                        // Parse argument
+                        char *arg = Str_Substr(args[1], matches[1].rm_so, matches[1].rm_eo);
+                        int payload = Str_ParseInt(arg);
+                        free(arg);
+
+                        // Push bytes
+                        Elf_PushByte(elf, ai.ai_instr);
+                        Elf_PushByte(elf, ai.ai_regdesc);
+                        Elf_PushByte(elf, ai.ai_addrmode);
+                        Elf_PushByte(elf, payload >> 8);
+                        Elf_PushByte(elf, payload & 0xff);
+                    } else if (Str_RegMatch(args[1], "^(r[0-9])$", ARR_SIZE(matches), matches)) {
+                        /* <reg> */
+                        // Set source register
+                        ai.ai_rs = Asm_ParseRegOperand(args[1]);
+                        ai.ai_am = ASM_AM_REGDIR;
+                        ai.ai_up = 0x0;
+
+                        // Push bytes
+                        Elf_PushByte(elf, ai.ai_instr);
+                        Elf_PushByte(elf, ai.ai_regdesc);
+                        Elf_PushByte(elf, ai.ai_addrmode);
+                    }  else if (Str_RegMatch(args[1], "^\\[r([0-9])\\]$", ARR_SIZE(matches), matches)) {
+                        /* [<reg>] */
+                        // Set source register
+                        ai.ai_rs = Asm_ParseRegOperand(args[1]);
+                        ai.ai_am = ASM_AM_REGIND;
+                        ai.ai_up = 0x0;
+
+                        // Push bytes
+                        Elf_PushByte(elf, ai.ai_instr);
+                        Elf_PushByte(elf, ai.ai_regdesc);
+                        Elf_PushByte(elf, ai.ai_addrmode);
+                    } else if (Str_RegMatch(args[1], "^[%$]?([^0-9][._a-zA-Z0-9]*)$", ARR_SIZE(matches), matches)) {
+                        /* <symbol> | $<symbol> | %<symbol>*/
+                        // Source register is unused
+                        ai.ai_rs = 0xf;
+
+                        // Set addr type 
+                        ai.ai_am = (*args[1] == '$') ? ASM_AM_IMMED 
+                            : ASM_AM_MEMORY; 
+                        ai.ai_up = 0x0; // no change
+
+                        // Get symbol name
+                        char *sym_name= Str_Substr(args[1], matches[1].rm_so, matches[1].rm_eo);
+
+                        // Add rela
+                        Elf_PushSection(elf);
+                        Elf_Rela *rela = Elf_AddRelaSymb(elf, sym_name);
+                        rela->r_addend = 3;
+                        rela->r_info = ELF_R_INFO(ELF_R_SYM(rela->r_info), R_X86_64_16);
+                        Elf_PopSection(elf);
+
+                        // Free symbol memory
+                        free(sym_name);
+
+                        // Push bytes
+                        Elf_PushByte(elf, ai.ai_instr);
+                        Elf_PushByte(elf, ai.ai_regdesc);
+                        Elf_PushByte(elf, ai.ai_addrmode);
+
+                        // Next two bytes will be replaced by Rela
+                        Elf_PushByte(elf, 0); 
+                        Elf_PushByte(elf, 0);
+                    } else if (Str_RegMatch(args[1], "^\\[(r[0-9])\\+([0-9a-fA-FxX]+)\\]$", ARR_SIZE(matches), matches)) {
+                        /* [<reg> + <literal>] */
+
+                        // Parse source register
+                        char *reg_str = Str_Substr(args[1], matches[1].rm_so, matches[1].rm_eo);
+                        ai.ai_rs = Asm_ParseRegOperand(reg_str);
+                        free(reg_str);
+
+                        // Parse argument
+                        char *payload_str= Str_Substr(args[1], matches[2].rm_so, matches[2].rm_eo);
+                        int payload = Str_ParseInt(payload_str);
+                        free(payload_str);
+
+                        // Set addr type 
+                        ai.ai_am = ASM_AM_REGIND; // Immediate or Memory
+                        ai.ai_up = 0x0; // no change
+
+                        // Push bytes
+                        Elf_PushByte(elf, ai.ai_instr);
+                        Elf_PushByte(elf, ai.ai_regdesc);
+                        Elf_PushByte(elf, ai.ai_addrmode);
+                        Elf_PushByte(elf, payload >> 8);
+                        Elf_PushByte(elf, payload & 0xff);
+
+                    } else if (Str_RegMatch(args[1], "^\\[(r[0-9])\\+([^0-9][._a-zA-Z0-9]*)]$", ARR_SIZE(matches), matches)) {
+                        /* [<reg> + <symbol>] */
+
+                        // Parse source register
+                        char *reg_str = Str_Substr(args[1], matches[1].rm_so, matches[1].rm_eo);
+                        ai.ai_rs = Asm_ParseRegOperand(reg_str);
+                        free(reg_str);
+
+                        // Get symbol name
+                        char *sym_name= Str_Substr(args[1], matches[2].rm_so, matches[2].rm_eo);
+
+                        // Add rela
+                        Elf_PushSection(elf);
+                        Elf_Rela *rela = Elf_AddRelaSymb(elf, sym_name);
+                        rela->r_addend = 3;
+                        rela->r_info = ELF_R_INFO(ELF_R_SYM(rela->r_info), R_X86_64_16);
+                        Elf_PopSection(elf);
+
+                        // Free symbol memory
+                        free(sym_name);
+
+                        // Set addr type 
+                        ai.ai_am = (*args[1] == '$') ? ASM_AM_IMMED : ASM_AM_MEMORY; // Immediate or Memory
+                        ai.ai_up = 0x0; // no change
+
+
+                        // Push bytes
+                        Elf_PushByte(elf, ai.ai_instr);
+                        Elf_PushByte(elf, ai.ai_regdesc);
+                        Elf_PushByte(elf, ai.ai_addrmode);
+                        // Next two bytes will be replaced by rela
+                        Elf_PushByte(elf, 0x0);
+                        Elf_PushByte(elf, 0x0);
+                    } else {
+                        fprintf(stderr, "Error (Assembler): Bad syntax for instruction '%s' at line %d\n", instr, linenum);
+                    }
                 } else {
-                    fprintf(stderr, "Unknown instruction '%s' at line %d\n", instr, linenum);
+                    fprintf(stderr, "Error (Assembler): Unknown instruction '%s' at line %d\n", instr, linenum);
                 }
             }
         } while (0);
@@ -370,306 +832,6 @@ void Asm_Compile(Elf_Builder *elf, FILE *input, int flags)
     regfree(&re_instr);
     regfree(&re_comnt);
     regfree(&re_isnum);
-}
-
-int ss_asm(FILE *input, FILE *output, int falgs)
-{
-    /*
-     * Init elf
-     */
-    section_t *section_head = NULL;
-    section_t *section_curr = NULL;
-    symbol_t *symbol_head = NULL;
-
-    int linenum = 0;
-    int nread = 0;
-    char *line = NULL;
-    ssize_t linelen;
-
-    regex_t re_empty; // Matches empty lines
-    regex_t re_label; // Matches line label
-    regex_t re_instr; // Matches instruction or directive
-    regex_t re_comnt; // Matches comment
-    regmatch_t matches[MAX_REGEX_MATCHES];
-    if (regcomp(&re_empty, "^\\s*(#.*)*$", REG_EXTENDED)) {
-        fprintf(stderr, "Error compiling regex for empty lines\n");
-        return -1;
-    }
-    if (regcomp(&re_label, "^\\s*([^ \t]*)\\s*:\\s*", REG_EXTENDED)) {
-        fprintf(stderr, "Error compiling regex for labels\n");
-        return -1;
-    }
-    if (regcomp(&re_comnt, "([^#]*)#(.*)$", REG_EXTENDED)) {
-        fprintf(stderr, "Error compiling regex for comments\n");
-        return -1;
-    }
-    // \\s*([^ :]*:)?\\s*(.?[a-zA-Z]+)\\s*(.*)?(a.*#)?$
-    if (regcomp(&re_instr, "^\\s*(.?[^ \t]+)\\s*", REG_EXTENDED)) {
-        fprintf(stderr, "Error compiling regex for instructions\n");
-        return -1;
-    }
-
-
-    while ((nread = getline(&line, &linelen, input)) != -1) {
-        /*
-         * read line
-         */
-        linenum += 1;
-        line[strlen(line) - 1] = '\0';
-        char *lbuf = line;
-
-        /*
-         * Extract label, instruction, arguments
-         */
-        char *label = NULL;
-        char *instr = NULL;
-        char *args[MAX_ASM_ARGS];
-        int argc = 0;
-
-        // Skip empty or comment lines
-        if (regexec(&re_empty, lbuf, ARR_SIZE(matches), matches, 0) == 0) {
-            continue;
-        }
-        
-        // Check if line has a label
-        if (regexec(&re_label, lbuf, ARR_SIZE(matches), matches, 0) == 0) {
-            // Read label
-            regoff_t start = matches[1].rm_so;
-            regoff_t end = matches[1].rm_eo;
-            regoff_t len = end - start;
-            label = malloc(len + 1);
-            assert(label != NULL);
-            strncpy(label, lbuf + start, len);
-            label[len] = '\0';
-
-            // Skip
-            lbuf += (matches[0].rm_eo - matches[0].rm_so);
-        }
-
-        // Remove comments
-        if (regexec(&re_comnt, lbuf, ARR_SIZE(matches), matches, 0) == 0) {
-            // Skip comment
-            regoff_t start = matches[1].rm_so;
-            regoff_t end = matches[1].rm_eo;
-            regoff_t len = end - start;
-            lbuf[len] = '\0';
-        }
-
-        // Extract directive or instruction
-        if (regexec(&re_instr, lbuf, ARR_SIZE(matches), matches, 0) == 0) {
-            regoff_t start = matches[1].rm_so;
-            regoff_t end = matches[1].rm_eo;
-            regoff_t len = end - start;
-            instr = malloc(len + 1);
-            strncpy(instr, lbuf + start, len);
-            instr[len] = '\0';
-
-            // Skip instruction
-            lbuf += (matches[0].rm_eo - matches[0].rm_so);
-            // Read arguments
-            //printf("Instr: '%s' ", instr);
-
-            char *arg = strtok(lbuf, ",");
-            while (arg) {
-                args[argc] = strdup(arg);
-                argc += 1;
-                arg = strtok(NULL, ",");
-            }
-        }
-
-
-        /*
-         * Parse
-         */
-        do {
-            if (! instr) 
-                break;
-            if (*instr == '.') {
-                if (strcmp(instr, ".global") == 0) {
-                } else if (strcmp(instr, ".extern") == 0) {
-                } else if (strcmp(instr, ".section") == 0) {
-                    if (argc < 1 || argc >= 2) {
-                        error("Directive '.section' at line %d requires exatly 1 argument", linenum);
-                        break;
-                    }
-                    char *sec_name = args[0];
-                    Str_RmSpaces(sec_name);
-
-                    // Find section
-                    section_t *iter = section_head, *prev = NULL;
-                    while (iter) {
-                        if (strcmp(iter->s_name, sec_name) == 0)
-                            break;
-                        prev = iter;
-                        iter = iter->s_next;
-                    }
-                    if (iter == NULL) {
-                        iter = section_new(sec_name);
-                        if (prev)
-                            prev->s_next = iter;
-                    }
-                    section_curr = iter;
-                    debug("Current section name: '%s'", iter->s_name);
-                } else if (strcmp(instr, ".word") == 0) {
-                    debug(".word directive on line %d", linenum);
-                    if (! section_curr) {
-                        error("Section is not set");
-                        break;
-                    }
-
-                } else if (strcmp(instr, ".skip") == 0) {
-                } else if (strcmp(instr, ".ascii") == 0) {
-                } else if (strcmp(instr, ".equ") == 0) {
-                } else if (strcmp(instr, ".end") == 0) {
-                } else {
-                    error("Unknown directive '%s' at line %d\n", instr, linenum);
-                }
-            } else {
-                if (strcmp(instr, "halt") == 0) {
-                } else if (strcmp(instr, "int") == 0) {
-                } else if (strcmp(instr, "iret") == 0) {
-                } else if (strcmp(instr, "call") == 0) {
-                } else if (strcmp(instr, "ret") == 0) {
-                } else if (strcmp(instr, "jmp") == 0) {
-                } else if (strcmp(instr, "jeq") == 0) {
-                } else if (strcmp(instr, "jne") == 0) {
-                } else if (strcmp(instr, "jgt") == 0) {
-                } else if (strcmp(instr, "push") == 0) {
-                } else if (strcmp(instr, "pop") == 0) {
-                } else if (strcmp(instr, "xchg") == 0) {
-                } else if (strcmp(instr, "add") == 0) {
-                } else if (strcmp(instr, "sub") == 0) {
-                } else if (strcmp(instr, "mul") == 0) {
-                } else if (strcmp(instr, "div") == 0) {
-                } else if (strcmp(instr, "cmp") == 0) {
-                } else if (strcmp(instr, "not") == 0) {
-                } else if (strcmp(instr, "and") == 0) {
-                } else if (strcmp(instr, "or") == 0) {
-                } else if (strcmp(instr, "xor") == 0) {
-                } else if (strcmp(instr, "test") == 0) {
-                } else if (strcmp(instr, "shl") == 0) {
-                } else if (strcmp(instr, "shr") == 0) {
-                } else if (strcmp(instr, "ldr") == 0) {
-                } else if (strcmp(instr, "str") == 0) {
-                } else {
-                    fprintf(stderr, "Unknown instruction '%s' at line %d\n", instr, linenum);
-                }
-            }
-        } while (0);
-
-        // Free memory
-        if (label)
-            free(label);
-        if (instr)
-            free(instr);
-        for (int i = 0; i < argc; i++)
-            free(args[i]);
-    }
-    free(line);
-    regfree(&re_empty);
-    regfree(&re_label);
-    regfree(&re_instr);
-    regfree(&re_comnt);
-    return 0;
-}
-
-
-void Test1() {
-    Elf_Builder elf;
-    Elf_Init(&elf);
-    Elf_CreateSection(&elf, ".text");
-    Elf_PushSection(&elf);
-    Elf_PushString(&elf, "Nigga what the fuck is this shit holy shit");
-    Elf_PushString(&elf, "SAL SNEEDERINO PRETTY FUCKING BASED ?? ?? ? ?");
-    Elf_UseSymbol(&elf, "nigga");
-    Elf_UseSymbol(&elf, "nigga");
-
-    Elf_UseSection(&elf, ".hello");
-    Elf_AddRelaSymb(&elf, "A");
-    Elf_AddRelaSymb(&elf, "B");
-    Elf_AddRelaSymb(&elf, "C");
-    Elf_AddRelaSymb(&elf, "D");
-    Elf_PushString(&elf, "SAfdsafdsafdasfdasfdsaL SNEEDERINO PRETTY FUCKING BASED ?? ?? ? ?");
-
-    Elf_PopSection(&elf);
-    FILE  *out = fopen("here.elf", "w");
-    Elf_WriteHex(&elf, out);
-    fclose(out);
-
-    FILE *in = fopen("here.elf", "r");
-    Elf_Builder elf2;
-    Elf_ReadHexInit(&elf2, in);
-    fclose(in);
-    Elf_WriteDump(&elf2, stdout);
-    Elf_Destroy(&elf2);
-}
-
-
-void Test2() {
-    Elf_Builder elf1, elf2;
-    FILE *file1 = NULL, *file2 = NULL;
-
-    // Create first elf
-    printf("\e[31mFirst elf:\e[0m\n");
-    Elf_Init(&elf1);
-    Elf_PushSection(&elf1);
-    Elf_UseSection(&elf1, ".text1");
-    Elf_PushSkip(&elf1, 120, 0x55);
-    Elf_UseSection(&elf1, ".text");
-    Elf_UseSection(&elf1, ".text2");
-    Elf_UseSection(&elf1, ".text3");
-    Elf_UseSection(&elf1, ".text");
-    Elf_Sym *sym = Elf_CreateSymbol(&elf1, "_ZFunction");
-    sym->st_info = ELF_ST_INFO(STB_GLOBAL, STT_FUNC);
-    Elf_UseSection(&elf1, ".text");
-    Elf_PushSkip(&elf1, 48, 0x11);
-
-    Elf_UseSection(&elf1, ".iv_table");
-    Elf_AddRelaSymb(&elf1, "Ok");
-    Elf_AddRelaSymb(&elf1, "Nigga");
-
-    Elf_UseSection(&elf1, ".data");
-
-    Elf_PopSection(&elf1);
-    //Elf_WriteDump(&elf1, stdout);
-
-    // Create second elf
-    printf("\e[32mSecond elf:\e[0m\n");
-    Elf_Init(&elf2);
-    Elf_PushSection(&elf2);
-    Elf_UseSection(&elf2, ".data");
-    Elf_AddRelaSymb(&elf2, "What");
-    Elf_CreateSymbol(&elf2, "nigga");
-    Elf_PushSkip(&elf2, 12, 0x33);
-    Elf_PopSection(&elf2);
-
-
-    // Save them 
-    file1 = fopen("elf1.hex", "w");
-    file2 = fopen("elf2.hex", "w");
-    Elf_WriteHex(&elf1, file1);
-    Elf_WriteHex(&elf2, file2);
-    fclose(file1);
-    fclose(file2);
-
-    // Load them
-    Elf_Builder elf3, elf4;
-    file1 = fopen("elf1.hex", "r");
-    file2 = fopen("elf2.hex", "r");
-    Elf_ReadHexInit(&elf3, file1);
-    Elf_ReadHexInit(&elf4, file2);
-    fclose(file1);
-    fclose(file2);
-    //Elf_WriteDump(&elf4, stdout);
-
-    // Link them
-    Elf_Builder elf5;
-    Elf_Init(&elf5);
-    Elf_Link(&elf5, &elf4);
-    Elf_Link(&elf5, &elf3);
-    printf("\e[33mThird elf:\e[0m\n");
-    Elf_WriteDump(&elf5, stdout);
-    const char *str = ".data";
 }
 
 int main(int argc, char *argv[])
@@ -730,7 +892,11 @@ int main(int argc, char *argv[])
     Elf_Builder elf;
     Elf_Init(&elf);
     Asm_Compile(&elf, input, F_DEBUG);
-    Elf_WriteDump(&elf, output);
+    if (flags | F_HEX)  {
+        Elf_WriteHex(&elf, output);
+    } else {
+        Elf_WriteDump(&elf, output);
+    }
 
     /* Close files */
     if (input != stdin) 

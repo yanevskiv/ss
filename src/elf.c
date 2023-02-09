@@ -538,12 +538,13 @@ Elf_Rela *Elf_AddRela(Elf_Builder *elf, Elf_Word symndx)
     Elf_UseRelaSection(elf);
 
     // Add rela
-    Elf_Rela *ret = (Elf_Rela*) (Elf_GetSectionData(elf) + Elf_GetSectionSize(elf));
+    Elf_Off off = Elf_GetSectionSize(elf);
     Elf_Rela rela;
     rela.r_offset = 0;
     rela.r_info = ELF_R_INFO(symndx, R_X86_64_NONE);
     rela.r_addend = 0;
     Elf_PushBytes(elf, &rela, sizeof(rela));
+    Elf_Rela *ret = (Elf_Rela*) (Elf_GetSectionData(elf) + off);
     Elf_PopSection(elf);
     return ret;
 }
@@ -824,14 +825,14 @@ void Elf_WriteDump(Elf_Builder* elf, FILE* output)
                 }
             } break;
             case SHT_RELA: {
-                // TODO
-                fprintf(output, "Offset Type          Symbol  Addend\n");
+                fprintf(output, "Num Offset         Type          Symbol  Addend\n");
                 int i, size = Elf_GetSectionSize(elf) / sizeof(Elf_Rela);
                 for (i = 0; i < size; i++) {
                     Elf_Rela *rela =  Elf_GetSectionEntry(elf, i);
                     Elf_Half type = ELF_R_TYPE(rela->r_info);
                     Elf_Word symndx = ELF_R_SYM(rela->r_info);
-                    fprintf(output, "%3d: %15s %3d(%s) %4d\n", i,
+                    fprintf(output, "%3d: %08d %15s %3d(%s) %3d\n", i,
+                        rela->r_offset,
                         _Elf_GetRelaTypeName(type),
                         symndx,
                         Elf_GetSymbolName(elf, symndx),
@@ -988,6 +989,7 @@ void Elf_Link(Elf_Builder *dest, Elf_Builder *src)
                 // Add Rela entries
                 int i, size = Elf_GetSectionSize(src) / sizeof(Elf_Rela);
                 for (i = 0; i < size; i++) {
+                    // Get rela
                     Elf_Rela *rela = Elf_GetSectionEntry(src, i);
                     Elf_Half type = ELF_R_TYPE(rela->r_info);
                     Elf_Word symndx = ELF_R_SYM(rela->r_info);
@@ -1024,8 +1026,6 @@ void Elf_Link(Elf_Builder *dest, Elf_Builder *src)
                     Elf_UseSection(dest, Elf_GetSectionName(src));
                     Elf_PushBytes(dest, &dest_rela, sizeof(dest_rela));
                     Elf_PopSection(dest);
-
-
                 }
             } break;
             default: {

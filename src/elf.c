@@ -984,6 +984,7 @@ void Elf_Link(Elf_Builder *dest, Elf_Builder *src)
                 Elf_UseSection(dest, Elf_GetSectionName(src));
                 Elf_GetSection(dest)->sh_type = SHT_RELA;
                 Elf_GetSection(dest)->sh_entsize= sizeof(Elf_Rela);
+                Elf_Word original_size = Elf_GetSectionSize(dest);
                 Elf_PopSection(dest);
 
                 // Add Rela entries
@@ -1019,7 +1020,7 @@ void Elf_Link(Elf_Builder *dest, Elf_Builder *src)
 
                     // Add rela to destination
                     Elf_Rela dest_rela;
-                    dest_rela.r_offset = rela->r_offset;
+                    dest_rela.r_offset = original_size + rela->r_offset;
                     dest_rela.r_info = ELF_R_INFO(dest_symndx, type);
                     dest_rela.r_addend = rela->r_addend;
                     Elf_PushSection(dest);

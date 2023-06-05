@@ -1,0 +1,3 @@
+#!/bin/bash
+./asembler -o izlaz.o ulaz.s 
+

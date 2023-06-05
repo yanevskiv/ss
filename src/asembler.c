@@ -542,6 +542,7 @@ void Asm_Compile(Elf_Builder *elf, FILE *input, int flags)
                             : R_X86_64_16;
                         Elf_PushSection(elf);
                         Elf_Rela *rela = Elf_AddRelaSymb(elf, sym_name);
+                        rela->r_offset = Elf_GetSectionSize(elf);
                         rela->r_addend = 3;
                         rela->r_info = ELF_R_INFO(ELF_R_SYM(rela->r_info), rela_type);
                         Elf_PopSection(elf);
@@ -597,7 +598,7 @@ void Asm_Compile(Elf_Builder *elf, FILE *input, int flags)
                         Elf_PushByte(elf, ai.ai_addrmode);
                         Elf_PushByte(elf, payload >> 8);
                         Elf_PushByte(elf, payload & 0xff);
-                    } else if (Str_RegMatch(args[0], "^[*]\\[(r[0-9])\\+([^0-9][._a-zA-Z0-9]*)]$", ARR_SIZE(matches), matches)) {
+                    } else if (Str_RegMatch(args[0], "^[*]\\[(r[0-9])[+]([^0-9][._a-zA-Z0-9]+)]$", ARR_SIZE(matches), matches)) {
                         /* *[ <reg> + <symbol> ] */
 
                         // Parse register
@@ -607,7 +608,8 @@ void Asm_Compile(Elf_Builder *elf, FILE *input, int flags)
                         free(reg_str);
 
                         // Get symbol name
-                        char *sym_name= Str_Substr(args[1], matches[1].rm_so, matches[1].rm_eo);
+                        char *sym_name= Str_Substr(args[0], matches[2].rm_so, matches[2].rm_eo);
+                        printf("'%s'\n", sym_name);
 
                         // Add rela
                         int rela_type = (*args[0] == '%') 
@@ -615,6 +617,7 @@ void Asm_Compile(Elf_Builder *elf, FILE *input, int flags)
                             : R_X86_64_16;
                         Elf_PushSection(elf);
                         Elf_Rela *rela = Elf_AddRelaSymb(elf, sym_name);
+                        rela->r_offset = Elf_GetSectionSize(elf);
                         rela->r_addend = 3;
                         rela->r_info = ELF_R_INFO(ELF_R_SYM(rela->r_info), rela_type);
                         Elf_PopSection(elf);
@@ -726,7 +729,8 @@ void Asm_Compile(Elf_Builder *elf, FILE *input, int flags)
                         ai.ai_rs = 0xf;
 
                         // Set addr type 
-                        ai.ai_am = (*args[1] == '$') ? ASM_AM_IMMED 
+                        ai.ai_am = (*args[1] == '$') 
+                            ? ASM_AM_IMMED 
                             : ASM_AM_MEMORY; 
                         ai.ai_up = 0x0; // no change
 
@@ -736,6 +740,7 @@ void Asm_Compile(Elf_Builder *elf, FILE *input, int flags)
                         // Add rela
                         Elf_PushSection(elf);
                         Elf_Rela *rela = Elf_AddRelaSymb(elf, sym_name);
+                        rela->r_offset = Elf_GetSectionSize(elf);
                         rela->r_addend = 3;
                         rela->r_info = ELF_R_INFO(ELF_R_SYM(rela->r_info), R_X86_64_16);
                         Elf_PopSection(elf);
@@ -789,6 +794,7 @@ void Asm_Compile(Elf_Builder *elf, FILE *input, int flags)
                         // Add rela
                         Elf_PushSection(elf);
                         Elf_Rela *rela = Elf_AddRelaSymb(elf, sym_name);
+                        rela->r_offset = Elf_GetSectionSize(elf);
                         rela->r_addend = 3;
                         rela->r_info = ELF_R_INFO(ELF_R_SYM(rela->r_info), R_X86_64_16);
                         Elf_PopSection(elf);

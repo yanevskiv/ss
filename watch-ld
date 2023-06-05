@@ -1,0 +1,4 @@
+#!/bin/bash
+
+
+watch -ctn0.1 bash -c "cd $PWD; gcc -fdiagnostics-color=always src/asembler.c -o asembler && ./asembler -o izlaz.o ulaz.s && cat izlaz.o"

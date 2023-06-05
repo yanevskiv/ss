@@ -18,8 +18,6 @@
 #define ASM_SP_REG 0x6
 
 
-
-
 typedef struct Asm_Instr {
     union {
         struct {
@@ -48,8 +46,5 @@ typedef struct Asm_Instr {
 
 void Asm_Compile(Elf_Builder *elf, FILE *input, int flags);
 //Asm_Instr Asm_ParseInstr(char *instr, char **args);
-
-
-
 
 #endif /* _SS_ASEMBLER_H_ */ 

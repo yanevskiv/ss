@@ -4,6 +4,6 @@
 # prekidna rutina za terminal
 .global isr_terminal
 isr_terminal:
-  iret
+    ret
   
 .end

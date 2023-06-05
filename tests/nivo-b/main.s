@@ -1,19 +1,20 @@
 # file: main.s
 
-.global my_start, my_counter
+.global handler, my_start, my_counter
 
 .section my_code
 my_start:
-  ldr r6, $0xFEFE # init SP
-  
-  ldr r0, $0x1
-  str r0, 0xFF10 # tim_cfg
+    ld $0xFFFFFEFE, %sp
+    ld $handler, %r1
+    csrwr %r1, %handler
+    
+    ld $0x1, %r1
+    st %r1, 0xFFFFFF10 # tim_cfg
 wait:
-  ldr r0, my_counter
-  ldr r1, $20
-  cmp r0, r1
-  jne wait
-  halt
+    ld my_counter, %r1
+    ld $20, %r2
+    bne %r1, %r2, wait
+    halt
 
 .section my_data
 my_counter:

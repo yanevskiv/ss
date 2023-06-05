@@ -6,18 +6,37 @@
 # prekidna rutina za terminal
 .global isr_terminal
 isr_terminal:
-  push r0
-  push r1
-  ldr r0, 0xFF02 # term_in
-  ldr r1, $2 # character_offset
-  add r0, r1
-  str r0, 0xFF00 # term_out
-  ldr r0, %my_counter # pcrel
-  ldr r1, $1
-  add r0, r1
-  str r0, my_counter # abs
-  pop r1
-  pop r0
-  iret
-  
+    push %r1
+    push %r2
+
+    ld 0xFFFFFF04, %r1 # term_in
+    ld $121, %r2 # character_offset
+    bne %r1, %r2, skip
+
+    ld $message_start, %r1
+
+    ld [%r1+0], %r2
+    st %r2, 0xFFFFFF00 # term_out
+    ld [%r1+1], %r2
+    st %r2, 0xFFFFFF00 # term_out
+    ld [%r1+2], %r2
+    st %r2, 0xFFFFFF00 # term_out
+    ld [%r1+3], %r2
+    st %r2, 0xFFFFFF00 # term_out
+    ld [%r1+4], %r2
+    st %r2, 0xFFFFFF00 # term_out
+
+    ld my_counter, %r1 
+    ld $1, %r2
+    add %r2, %r1
+    st %r1, my_counter
+
+skip:
+    pop %r2
+    pop %r1
+
+    ret
+message_start:
+.ascii "press"
+
 .end

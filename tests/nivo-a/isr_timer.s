@@ -4,6 +4,6 @@
 # prekidna rutina za tajmer
 .global isr_timer
 isr_timer:
-  iret
+    ret
 
 .end

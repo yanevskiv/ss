@@ -1,21 +1,22 @@
 # file: main.s
 
-.global my_start, my_counter
+.global handler, my_start, my_counter
 
 .section code
-.equ initial_sp, 0xFEFE
-.equ timer_config, 0xFF10
+.equ initial_sp, 0xFFFFFEFE
+.equ timer_config, 0xFFFFFF10
 my_start:
-  ldr r6, $initial_sp # initial value for SP
+    ld $initial_sp, %sp
+    ld $handler, %r1
+    csrwr %r1, %handler
 
-  ldr r0, $0x1
-  str r0, timer_config
+    ld $0x1, %r1
+    st %r1, timer_config
 wait:
-  ldr r0, my_counter
-  ldr r1, $20
-  cmp r0, r1
-  jne wait
-  halt
+    ld my_counter, %r1
+    ld $20, %r2
+    bne %r1, %r2, wait
+    halt
 
 .section my_data
 my_counter:

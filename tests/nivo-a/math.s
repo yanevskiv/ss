@@ -4,35 +4,35 @@
 
 .section math
 mathAdd:
-  push r1
-  ldr r0, [r6 + 4]
-  ldr r1, [r6 + 6]
-  add r0, r1
-  pop r1
-  ret
+    push %r2
+    ld [%sp + 0x08], %r1
+    ld [%sp + 0x0C], %r2
+    add %r2, %r1 # r1 used for the result
+    pop %r2
+    ret
 
 mathSub:
-  push r1
-  ldr r0, [r6 + 4]
-  ldr r1, [r6 + 6]
-  sub r0, r1
-  pop r1
-  ret
+    push %r2
+    ld [%sp + 0x08], %r1
+    ld [%sp + 0x0C], %r2
+    sub %r2, %r1 # r1 used for the result
+    pop %r2
+    ret
 
 mathMul:
-  push r1
-  ldr r0, [r6 + 4]
-  ldr r1, [r6 + 6]
-  mul r0, r1
-  pop r1
-  ret
+    push %r2
+    ld [%sp + 0x08], %r1
+    ld [%sp + 0x0C], %r2
+    mul %r2, %r1 # r1 used for the result
+    pop %r2
+    ret
 
 mathDiv:
-  push r1
-  ldr r0, [r6 + 4]
-  ldr r1, [r6 + 6]
-  div r0, r1
-  pop r1
-  ret
+    push %r2
+    ld [%sp + 0x08], %r1
+    ld [%sp + 0x0C], %r2
+    div %r2, %r1 # r1 used for the result
+    pop %r2
+    ret
 
 .end

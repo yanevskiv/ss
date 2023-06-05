@@ -6,23 +6,23 @@
 
 .section isr
 # prekidna rutina za terminal
-.equ terminal_out, 0xFF00
-.equ terminal_in, 0xFF02
+.equ terminal_out, 0xFFFFFF00
+.equ terminal_in, 0xFFFFFF04
 .equ character_offset, 2
 .global isr_terminal
 isr_terminal:
-  push r0
-  push r1
-  ldr r0, terminal_in
-  ldr r1, $character_offset
-  add r0, r1
-  str r0, terminal_out
-  ldr r0, %my_counter # pcrel
-  ldr r1, $1
-  add r0, r1
-  str r0, my_counter # abs
-  pop r1
-  pop r0
-  iret
+    push %r1
+    push %r2
+    ld terminal_in, %r1
+    ld $character_offset, %r2
+    add %r2, %r1
+    st %r1, terminal_out
+    ld my_counter, %r1
+    ld $1, %r2
+    add %r2, %r1
+    st %r1, my_counter
+    pop %r2
+    pop %r1
+    ret
   
 .end

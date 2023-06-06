@@ -277,3 +277,62 @@ int Str_ParseInt(const char *str)
     }
     return value;
 }
+
+
+void Str_Trim(char *str)
+{
+    int i, from, to, len = strlen(str);
+    if (len == 0)
+        return;
+    if (len == 1) {
+        if (isspace(str[0]))
+            str[0] = '\0';
+    }
+    for (to = len - 1; to >= 0; to -= 1) {
+        if (! isspace(str[to])) 
+            break;
+    }
+    for (from = 0; from < len; from++) {
+         if (! isspace(str[from])) 
+            break;
+    }
+    if (from > to) {
+        str[0] = '\0';
+    }
+    for (i = 0; i < to - from + 1; i++) {
+        str[i] = str[from + i];
+    }
+    str[i] = '\0';
+}
+
+int Str_RegexMatchStr(const char *str, const char *re, int count, char **matches)
+{
+    regmatch_t *regMatches = (regmatch_t*)calloc(count, sizeof(regmatch_t));
+    assert(regMatches != NULL);
+    if (Str_RegexMatch(str, re, count, regMatches)) {
+        int i;
+        for (i = 0; i < count; i++) {
+            if (matches[i])  {
+                free(matches[i]);
+                matches[i] = NULL;
+            }
+            if (regMatches[i].rm_so != -1 && regMatches[i].rm_eo != -1) {
+                matches[i] = Str_Substr(str, regMatches[i].rm_so, regMatches[i].rm_eo);
+            }
+        }
+        return 1;
+    }
+    free(regMatches);
+    return 0;
+}
+
+void Str_RegexClean(int count, char **matches)
+{
+    int i;
+    for (i = 0; i < count; i++) {
+        if (matches[i])  {
+            free(matches[i]);
+            matches[i] = NULL;
+        }
+    }
+}

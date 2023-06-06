@@ -204,9 +204,9 @@ typedef struct
 typedef struct
 {
   Elf_Word  st_name;        /* Symbol name (string tbl index) */
-  unsigned char st_info;        /* Symbol type and binding */
-  unsigned char st_other;       /* Symbol visibility */
-  Elf_Section   st_shndx;       /* Section index */
+  unsigned char st_info;    /* Symbol type and binding */
+  unsigned char st_other;   /* Symbol visibility */
+  Elf_Section   st_shndx;   /* Section index */
   Elf_Addr  st_value;       /* Symbol value */
   Elf_Xword st_size;        /* Symbol size */
 } Elf_Sym;
@@ -226,9 +226,9 @@ typedef struct
 
 typedef struct
 {
-  Elf_Addr  r_offset;       /* Address */
-  Elf_Xword r_info;         /* Relocation type and symbol index */
-  Elf_Sxword    r_addend;       /* Addend */
+  Elf_Addr   r_offset;       /* Address */
+  Elf_Xword  r_info;         /* Relocation type and symbol index */
+  Elf_Sxword r_addend;       /* Addend */
 } Elf_Rela;
 
 typedef struct
@@ -246,8 +246,7 @@ typedef struct
 typedef struct
 {
   Elf_Sxword    d_tag;          /* Dynamic entry type */
-  union
-    {
+  union {
       Elf_Xword d_val;      /* Integer value */
       Elf_Addr d_ptr;           /* Address value */
     } d_un;

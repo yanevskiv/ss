@@ -250,7 +250,8 @@ char *Str_Concat(char *str1, char *str2)
     return str;
 }
 
-int Str_ParseInt(const char *str) {
+int Str_ParseInt(const char *str)
+{
     int sign = 1;
     if (*str == '+') {
         str ++;
@@ -281,8 +282,15 @@ int Str_ParseInt(const char *str) {
 }
 
 
-void Str_Trim(char *str) {
+void Str_Trim(char *str)
+{
     int i, from, to, len = strlen(str);
+    if (len == 0)
+        return;
+    if (len == 1) {
+        if (isspace(str[0]))
+            str[0] = '\0';
+    }
     for (to = len - 1; to >= 0; to -= 1) {
         if (! isspace(str[to])) 
             break;
@@ -291,7 +299,7 @@ void Str_Trim(char *str) {
          if (! isspace(str[from])) 
             break;
     }
-    if (from >= to) {
+    if (from > to) {
         str[0] = '\0';
     }
     for (i = 0; i < to - from + 1; i++) {

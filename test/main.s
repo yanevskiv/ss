@@ -6,15 +6,7 @@
 
 .global value1, value2, value3, value4, value5, value6, value7
 
-.section test_code
-    #halt
-    #int
-    #iret
-    xchg %r2, %sp
-
 .section my_code
-
-
 
 my_start:
     ld $0xFFFFFEFE, %sp

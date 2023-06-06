@@ -427,13 +427,15 @@ Elf_Sym *Elf_CreateSymbol(Elf_Builder *elf, const char *name)
     // Add symbol to symbol table (.symtab)
     Elf_PushSection(elf);
     Elf_UseSection(elf, ".symtab");
+
     // Remember where the symbol is located
     Elf_Word off = Elf_GetSectionSize(elf);
     Elf_Sym sym;
     sym.st_name = name_ndx; 
     sym.st_info = ELF_ST_INFO(STB_LOCAL, STT_NOTYPE); 
     sym.st_other = STV_DEFAULT;
-    sym.st_shndx = section_ndx;
+    //sym.st_shndx = section_ndx; 
+    sym.st_shndx = SHN_UNDEF; // It's better if the symbol is created with an empty section
     sym.st_value = 0;
     sym.st_size = 0;
     Elf_PushBytes(elf, &sym, sizeof(sym));
@@ -499,8 +501,9 @@ Elf_Sym *Elf_FetchSymbol(Elf_Builder *elf, const char *name)
 
 Elf_Sym *Elf_UseSymbol(Elf_Builder *elf, const char *name)
 {
-    if (! Elf_SymbolExists(elf, name))
+    if (! Elf_SymbolExists(elf, name)) {
         return Elf_CreateSymbol(elf, name);
+    }
     return Elf_FetchSymbol(elf, name);
 }
 
@@ -565,8 +568,10 @@ Elf_Rela *Elf_AddRela(Elf_Builder *elf, Elf_Word symndx)
 
 Elf_Rela *Elf_AddRelaSymb(Elf_Builder *elf, const char *symb) 
 {
-    if (! Elf_SymbolExists(elf, symb))
-        Elf_CreateSymbol(elf, symb);
+    if (! Elf_SymbolExists(elf, symb)) {
+        Elf_Sym *sym = Elf_CreateSymbol(elf, symb);
+        sym->st_shndx = SHN_UNDEF;
+    }
     Elf_Word symndx = Elf_FindSymbol(elf, symb);
     Elf_AddRela(elf, symndx);
 }

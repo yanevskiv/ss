@@ -30,6 +30,8 @@
         fprintf(stderr, "\n"); \
         fflush(stderr); \
     } while (0)
+#define TRUE 1
+#define FALSE 0
 
 char *Str_RmQuotes(char *str);
 int Str_Equals(const char *str1, const char *str2);
@@ -39,6 +41,7 @@ int Str_RegexMatch(const char *str, const char *re, int match_size, regmatch_t *
 char *Str_Substr(const char *str, int from, int to);
 void Str_Cut(char **str, int from, int to);
 void Str_Trim(char *str);
+int Str_ParseInt(const char *str);
 
 
 

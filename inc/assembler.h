@@ -21,28 +21,29 @@
 typedef struct Asm_Instr {
     union {
         struct {
-            Elf_Byte ai_mod : 4;
             Elf_Byte ai_oc : 4;
+            Elf_Byte ai_mod : 4;
         };
         Elf_Byte ai_instr;
     };
-    union {
-        struct {
-            Elf_Byte ai_rs : 4;
-            Elf_Byte ai_rd : 4;
-        };
-        Elf_Byte ai_regdesc;
+    struct {
+        Elf_Byte ai_ra : 4;
+        Elf_Byte ai_rb : 4;
+        Elf_Byte ai_rc : 4;
     };
-    union {
-        struct {
-            Elf_Byte ai_am : 4;
-            Elf_Byte ai_up : 4;
-        };
-        Elf_Byte ai_addrmode;
+    struct {
+        Elf_Byte ai_disp1: 4;
+        Elf_Byte ai_disp2: 4;
+        Elf_Byte ai_disp3: 4;
     };
-    Elf_Byte ai_datahi;
-    Elf_Byte ai_datalo;
 } Asm_Instr;
+
+
+#define ASM_INSTR_HALT       0x00000000
+#define ASM_INSTR_INT        0x00000001
+#define ASM_INSTR_ALU 
+
+
 
 void Asm_Compile(Elf_Builder *elf, FILE *input, int flags);
 //Asm_Instr Asm_ParseInstr(char *instr, char **args);

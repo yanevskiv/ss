@@ -1,1 +1,6 @@
 /dist/
+/src/*.o
+/test/*.o
+assembler
+linker
+emulator

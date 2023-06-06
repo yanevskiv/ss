@@ -4,7 +4,6 @@
 #include <elf.h>
 #include <regex.h>
 
-
 void Elf_Init(Elf_Builder *elf)
 {
     // e_ident
@@ -239,6 +238,20 @@ void Elf_Buffer_PushByte(Elf_Buffer* buffer, unsigned char byte)
     buffer->eb_size += 1;
 }
 
+void Elf_Buffer_PushHalf(Elf_Buffer* buffer, Elf_Half half)
+{
+    Elf_Buffer_PushByte(buffer, (half) & 0xff);
+    Elf_Buffer_PushByte(buffer, (half >> 8) & 0xff);
+}
+
+void Elf_Buffer_PushWord(Elf_Buffer* buffer, Elf_Word word)
+{
+    Elf_Buffer_PushByte(buffer, word & 0xff);
+    Elf_Buffer_PushByte(buffer, (word >> 8)  & 0xff);
+    Elf_Buffer_PushByte(buffer, (word >> 16) & 0xff);
+    Elf_Buffer_PushByte(buffer, (word >> 24) & 0xff);
+}
+
 void Elf_Buffer_PushString(Elf_Buffer* buffer, const char *str)
 {
     while (*str) {
@@ -313,6 +326,12 @@ void Elf_PushBytes(Elf_Builder *elf, void *bytes, size_t size)
 void Elf_PushHalf(Elf_Builder *elf, Elf_Half half)
 {
     Elf_Buffer_PushHalf(Elf_GetBuffer(elf), half);
+    Elf_GetSection(elf)->sh_size = Elf_GetBuffer(elf)->eb_size;
+}
+
+void Elf_PushWord(Elf_Builder *elf, Elf_Word word)
+{
+    Elf_Buffer_PushWord(Elf_GetBuffer(elf), word);
     Elf_GetSection(elf)->sh_size = Elf_GetBuffer(elf)->eb_size;
 }
 
@@ -491,11 +510,6 @@ Elf_Section Elf_GetCurrentSection(Elf_Builder *elf)
 }
 
 
-void Elf_Buffer_PushHalf(Elf_Buffer* buffer, Elf_Half half)
-{
-    Elf_Buffer_PushByte(buffer, half & 0xff);
-    Elf_Buffer_PushByte(buffer, half >> 8);
-}
 
 int Elf_GetRelaCount(Elf_Builder* elf)
 {
@@ -606,14 +620,12 @@ static void _Elf_PrepareForWriting(Elf_Builder *elf)
     elf->eb_ehdr.e_shoff = off;
 }
 
-
 #define NORMAL 0
 #define FAINT 2
 #define RED   31
 #define GREEN 32
 #define YELLOW 33
 #define BLUE 34
-
 
 static size_t _WriteHexBytesColor(void *data, size_t count, size_t index, FILE *output, int color)
 {
@@ -1038,5 +1050,4 @@ void Elf_Link(Elf_Builder *dest, Elf_Builder *src)
         }
         Elf_PopSection(src);
     }
-    
 }

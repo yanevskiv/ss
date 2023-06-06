@@ -48,6 +48,7 @@ static void show_help(FILE* file)
 }
 
 int main(int argc, char *argv[]) {
+    /*
     if (argc != 2)  {
         show_help(stdout);
         return 0;
@@ -77,6 +78,7 @@ int main(int argc, char *argv[]) {
     Emu_Dump(&emu);
     Emu_Destroy(&emu);
 
+    */
 
     return 0;
 }

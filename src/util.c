@@ -28,6 +28,46 @@ int strsel(const char *str, ...)
     return -1;
 }
 
+char *Str_RmQuotes(char *str)
+{
+    char *head = str;
+    char *iter = str;
+    enum {
+        SKIPPING = 0,
+        READING = 1
+    };
+    int mode = SKIPPING;
+    char prev = '\0';
+    while (*iter) {
+        if (*iter == '"')  {
+            if (prev == '\\')  {
+                *head++ = '"';
+            } else {
+                mode = (mode + 1) % 2;
+            }
+        } else {
+            if (mode == READING) {
+                *head++ = *iter;
+            }
+            prev = *iter;
+        }
+        *iter = '\0';
+        iter++;
+    }
+    return str;
+}
+
+int Str_Equals(const char *str1, const char *str2)
+{
+    return strcmp(str1, str2) == 0;
+}
+
+
+char *Str_Create(const char *str)
+{
+    return strdup(str);
+}
+
 char* str_rmquotes(char *str)
 {
     char *cur = str;

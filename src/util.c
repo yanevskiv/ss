@@ -336,3 +336,44 @@ void Str_RegexClean(int count, char **matches)
         }
     }
 }
+
+void Str_Destroy(char *str)
+{
+    free(str);
+}
+
+char Str_UnescapeChar(const char *str)
+{
+    if (str[0] == '\\') {
+        switch (str[1]) {
+            case '\0': { return '\0'; } break;
+            case '0': { return '\0'; } break;
+            case '\\': { return '\\'; } break;
+            case 'e': { return '\e'; } break;
+            case 'n': { return '\n'; } break;
+            case 'r': { return '\r'; } break;
+            case 'a': { return '\a'; } break;
+            case 't': { return '\t'; } break;
+            case '"': { return '"'; } break;
+            case '\'': { return '\''; } break;
+        }
+    }
+    return str[0];
+}
+
+void Str_UnescapeStr(char *str)
+{
+    char *iter = str;
+    char *dest = str;
+    while (*iter) {
+        if (*iter == '\\') {
+            *dest = Str_UnescapeChar(iter);
+            iter += 1;
+        } else {
+            *dest = *iter;
+        }
+        iter += 1;
+        dest += 1;
+    }
+    *dest = '\0';
+}

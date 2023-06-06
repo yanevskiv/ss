@@ -156,3 +156,74 @@ char *Str_Substr(const char *str, int from, int to)
     strncpy(substr, str + from, to - from);
     return substr;
 }
+
+// Delete a part of a string
+// NOTE: This destroys `str` and returns a new one
+// If you need the sliced part, use Str_Substr() first and then Str_Slice()
+void Str_Cut(char **str, int from, int to)
+{
+    int len = strlen(*str);
+    if (from > to)  {
+        int tmp = from;
+        from = to;
+        to = from;
+    }
+    if (from < 0) 
+        from = 0;
+    if (from > len)
+        from = len;
+    if (to < 0)
+        to = len;
+    if (to > len)
+        to = len;
+    char *newstr = calloc(len - (to - from) + 1, sizeof(char));
+    assert(newstr != NULL);
+    int i, j = 0;
+    for (i = 0; i < from; i++, j++)
+        newstr[j] = (*str)[i];
+    for (i = to; i < len; i++, j++)
+        newstr[j] = (*str)[i];
+    newstr[j++] = '\0';
+    free(*str);
+    *str = newstr;
+}
+
+int Str_RegexMatch(const char *str, const char *re, int match_size, regmatch_t *matches) 
+{
+    regex_t regex; 
+    if (regcomp(&regex, re, REG_EXTENDED))  {
+        fprintf(stderr, "Error: Failed to compile regex '%s'\n", re);
+        return 0;
+    }
+    int result = 0;
+    if (regexec(&regex, str, match_size, matches, 0) == 0) {
+        result = 1;
+    }
+    regfree(&regex);
+    return result;
+}
+
+int Str_RegexExtract(const char *str, const char *re, int size, char **matches)
+{
+    regex_t regex;
+    if (regcomp(&regex, re, REG_EXTENDED))  {
+        fprintf(stderr, "Error: Failed to compile regex '%s'\n", re);
+        return 0;
+    }
+    int i, count = 0;
+    regmatch_t regMatches[MAX_REGEX_MATCHES];
+    if (regexec(&regex, str, ARR_SIZE(regMatches), regMatches, 0) == 0) {
+        for (i = 0; i < MAX_REGEX_MATCHES; i++) {
+            if (regMatches[i].rm_so == -1 || regMatches[i].rm_eo == -1) 
+                break;
+            char *substr = Str_Substr(str, regMatches[i].rm_so, regMatches[i].rm_eo);
+            if (matches[i]) {
+                free(matches[i]);
+            }
+            matches[i] = substr;
+            count += 1;
+        }
+    }
+    regfree(&regex);
+    return count;
+}

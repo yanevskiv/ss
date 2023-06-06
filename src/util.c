@@ -227,3 +227,53 @@ int Str_RegexExtract(const char *str, const char *re, int size, char **matches)
     regfree(&regex);
     return count;
 }
+
+int Str_CheckMatch(const char *str, const char *re)
+{
+    return Str_RegexMatch(str, re, 0, NULL);
+}
+
+char *Str_Concat(const char *str1, const char *str2)
+{
+    int len1 = strlen(str1);
+    int len2 = strlen(str2);
+
+    char *str = malloc(len1 + len2 + 1);
+    str[0] = '\0';
+    assert(str != NULL);
+    strcat(str, str1);
+    strcat(str + len1, str2);
+    return str;
+}
+
+
+int Str_ParseInt(const char *str)
+{
+    int sign = 1;
+    if (*str == '+') {
+        str ++;
+    }
+    if (*str == '-') {
+        sign = -1;
+        str ++;
+    }
+    int value = 0;
+    if (*str == '0')  {
+        // If 0 is the only character, the value is 0
+        if (*(str + 1) == '\0') 
+            return 0;
+
+        // Potentially octal or hexadecimal
+        if (*(str + 1) == 'x')  {
+            // Hexadecimal
+            return sign * strtol(str + 2, NULL, 16);
+        } else {
+            // Octal
+            return sign * strtol(str + 1, NULL, 8);
+        }
+    } else {
+        // Decimal
+        return sign * strtol(str, NULL, 10);
+    }
+    return value;
+}

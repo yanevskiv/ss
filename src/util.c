@@ -68,6 +68,19 @@ char *Str_Create(const char *str)
     return strdup(str);
 }
 
+char* Str_RmSpaces(char *str)
+{
+    char* curs = str;
+    while (*str) {
+        if (! isspace(*str)) {
+            *curs = *str;
+            curs++;
+        }
+        str++;
+    }
+    *curs = '\0';
+}
+
 char* str_rmquotes(char *str)
 {
     char *cur = str;
@@ -102,4 +115,44 @@ void buf_putc(buf_t *buf, char ch)
     buf->b_buffer[buf->b_count] = ch;
     buf->b_count += 1;
     buf->b_buffer[buf->b_count] = '\0';
+}
+
+int Str_EqualsIn(const char *str, ...)
+{
+    int result = 0;
+    va_list va;
+    va_start(va, str);
+    const char *arg = va_arg(va, const char*);
+    while (arg) {
+        if (Str_Equals(str, arg)) {
+            result = 1;
+            break;
+        }
+        arg = va_arg(va, const char*);
+    }
+    va_end(va);
+    return result;
+}
+
+// Return substring
+char *Str_Substr(const char *str, int from, int to)
+{
+    int len = strlen(str);
+    if (from > to)  {
+        int tmp = from;
+        from = to;
+        to = from;
+    }
+    if (from < 0) 
+        from = 0;
+    if (from > len)
+        from = len;
+    if (to < 0)
+        to = len;
+    if (to > len)
+        to = len;
+    char *substr = calloc(to - from + 1, sizeof(char));
+    assert(substr != NULL);
+    strncpy(substr, str + from, to - from);
+    return substr;
 }

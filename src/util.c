@@ -377,3 +377,48 @@ void Str_UnescapeStr(char *str)
     }
     *dest = '\0';
 }
+
+int Str_RegexSplit(const char *str, const char *re, int maxSplit, char **split)
+{
+    int count = 0;
+    regmatch_t rm[2];
+    int start = 0;
+    int length = strlen(str);
+
+    Str_RegexClean(maxSplit, split);
+    while (count < maxSplit && Str_RegexMatch(str + start, re, 2, rm)) {
+        int so = rm[0].rm_so;
+        int eo = rm[0].rm_eo;
+        int cso = rm[1].rm_so;
+        int ceo = rm[1].rm_eo;
+
+        if (so == -1)
+            break;
+        if (so != 0 && count < maxSplit) {
+            split[count] = Str_Substr(str, start, start + so);
+            count += 1;
+        }
+        if (cso != -1 && count < maxSplit)  {
+            split[count] = Str_Substr(str, start + cso, start + ceo);
+            count += 1;
+        }
+        start += eo;
+    }
+    if (count < maxSplit && start < length) {
+        split[count] = Str_Substr(str, start, length);
+        count += 1;
+    }
+
+    return count;
+}
+
+
+int Str_IsEmpty(const char *str)
+{
+    while (*str) {
+        if (! isspace(*str)) 
+            return 0;
+        str++;
+    }
+    return 1;
+}

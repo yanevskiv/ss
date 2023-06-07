@@ -224,3 +224,25 @@ void Elf_PopSection(Elf_Builder *elf)
     elf->eb_section_head -= 1;
     elf->eb_current_section = elf->eb_section_stack[elf->eb_section_head];
 }
+
+static void Elf_Buffer_CheckGrow(Elf_Buffer *buffer, size_t want) {
+    while ((buffer->eb_size + want) >= buffer->eb_capacity) {
+        buffer->eb_capacity *= 2;
+    }
+    buffer->eb_data = realloc(buffer->eb_data, (buffer->eb_capacity) * sizeof(unsigned char));
+    assert(buffer->eb_data != NULL);
+}
+
+void Elf_Buffer_Init(Elf_Buffer* buffer) {
+    buffer->eb_capacity = 10;
+    buffer->eb_size = 0;
+    buffer->eb_data = calloc(buffer->eb_capacity, sizeof(unsigned char));
+    assert(buffer->eb_data != NULL);
+}
+
+void Elf_Buffer_PushByte(Elf_Buffer* buffer, unsigned char byte)
+{
+    Elf_Buffer_CheckGrow(buffer, sizeof(unsigned char));
+    buffer->eb_data[buffer->eb_size] = byte;
+    buffer->eb_size += 1;
+}

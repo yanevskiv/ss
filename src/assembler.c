@@ -455,22 +455,29 @@ void Asm_Compile(Elf_Builder *elf, FILE *input, int flags)
             if (isOk) {
                 int direcId = Asm_DirecList[idx].d_direc_id;
                 switch (direcId) {
-                    case D_GLOBAL: {
+                    case D_GLOBAL:
+                    {
                         int i;
                         for (i = 0; i < argc; i++) {
                             Elf_Sym *sym = Elf_UseSymbol(elf, args[i]);
                             sym->st_info = ELF_ST_INFO(STB_GLOBAL, ELF_ST_TYPE(sym->st_info));
                         }
                     } break;
-                    case D_EXTERN: {
+
+                    case D_EXTERN:
+                    {
                         // Do nothing
                     } break;
-                    case D_SECTION: {
+
+                    case D_SECTION:
+                    {
                         Elf_UseSection(elf, args[0]);
                     } break;
+
                     case D_BYTE:
                     case D_SHORT:
-                    case D_WORD: {
+                    case D_WORD:
+                    {
                         int i;
                         for (i = 0; i < argc; i++) {
                             Asm_Operand *ao = Asm_ParseBranchOperand(args[i]);
@@ -498,18 +505,26 @@ void Asm_Compile(Elf_Builder *elf, FILE *input, int flags)
                             Asm_OperandDestroy(ao);
                         }
                     } break;
-                    case D_SKIP: {
+
+                    case D_SKIP:
+                    {
                         int value = Str_ParseInt(args[0]);
                         Elf_PushSkip(elf, value, 0x00);
                     } break;
-                    case D_ASCII: {
+
+                    case D_ASCII:
+                    {
                         Str_RmQuotes(args[0]);
                         Elf_PushString(elf, args[0]);
                     } break;
-                    case D_EQU: {
+
+                    case D_EQU:
+                    {
                         // Not Implemented
                     } break;
-                    case D_END: {
+
+                    case D_END:
+                    {
                         mode = MODE_QUIT;
                     } break;
                 }
@@ -566,12 +581,14 @@ void Asm_Compile(Elf_Builder *elf, FILE *input, int flags)
                     default: {
                         // DO NOTHING
                     } break;
+
                     case IAT_BOP: {
                         ao = Asm_ParseBranchOperand(args[0]);
                         if (ao->ao_type == AO_INVALID) {
                             opOK = FALSE;
                         }
                     } break;
+
                     case IAT_REG_REG_BOP: {
                         gprS = Asm_ParseRegOperand(args[0]);
                         gprD = Asm_ParseRegOperand(args[1]);
@@ -580,6 +597,7 @@ void Asm_Compile(Elf_Builder *elf, FILE *input, int flags)
                             opOK = FALSE;
                         }
                     } break;
+
                     case IAT_REG_REG: {
                         gprS = Asm_ParseRegOperand(args[0]);
                         gprD = Asm_ParseRegOperand(args[1]);
@@ -587,12 +605,14 @@ void Asm_Compile(Elf_Builder *elf, FILE *input, int flags)
                             opOK = FALSE;
                         }
                     } break;
+
                     case IAT_REG: {
                         gprD = Asm_ParseRegOperand(args[0]);
                         if (gprD == -1)  {
                             opOK = FALSE;
                         }
                     } break;
+
                     case IAT_DOP_REG: {
                         ao = Asm_ParseDataOperand(args[0]);
                         gprD = Asm_ParseRegOperand(args[1]);
@@ -600,6 +620,7 @@ void Asm_Compile(Elf_Builder *elf, FILE *input, int flags)
                             opOK = FALSE;
                         }
                     } break;
+
                     case IAT_REG_DOP: {
                         gprD = Asm_ParseRegOperand(args[0]);
                         ao = Asm_ParseDataOperand(args[1]);
@@ -607,6 +628,7 @@ void Asm_Compile(Elf_Builder *elf, FILE *input, int flags)
                             opOK = FALSE;
                         }
                     } break;
+
                     case IAT_CSR_REG: {
                         csr = Asm_ParseCsrOperand(args[0]);
                         gprD = Asm_ParseRegOperand(args[1]);
@@ -614,6 +636,7 @@ void Asm_Compile(Elf_Builder *elf, FILE *input, int flags)
                             opOK = FALSE;
                         }
                     } break;
+
                     case IAT_REG_CSR: {
                         gprD = Asm_ParseRegOperand(args[0]);
                         csr = Asm_ParseCsrOperand(args[1]);

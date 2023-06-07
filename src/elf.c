@@ -132,3 +132,75 @@ void Elf_Init(Elf_Builder *elf)
     Elf_PopSection(elf);
 
 }
+
+void Elf_Destroy(Elf_Builder *elf)
+{
+    for (int i = 0; i < elf->eb_shdr_size; i++) {
+        Elf_Buffer_Destroy(&elf->eb_buffer[i]);
+    }
+    free(elf->eb_buffer);
+    free(elf->eb_shdr);
+}
+
+void Elf_Buffer_Destroy(Elf_Buffer *buffer)
+{
+    free(buffer->eb_data);
+}
+
+Elf_Shdr *Elf_CreateSection(Elf_Builder *elf, const char *name)
+{
+    // Assign section
+    elf->eb_ehdr.e_shnum += 1; 
+    Elf_Word ndx = elf->eb_ehdr.e_shnum;
+    Elf_Shdr *shdr = &(elf->eb_shdr[ndx]);
+
+    // Add section name to ".strtab" and set `shdr->sh_name`
+    //Elf_Word namendx = Elf_AddUniqueString(elf, name);
+    //shdr->sh_name = namendx;
+
+    /*
+    Elf_PushSection(elf);
+    Elf_SetSection(elf, elf->eb_ehdr.e_shstrndx);
+    Elf_Word namendx = (Elf_Word)Elf_GetSection(elf)->sh_size;
+    shdr->sh_name = namendx;
+    Elf_PushString(elf, name);
+    Elf_PopSection(elf);
+    */
+
+    // Add symbol 
+    Elf_Sym *sym = Elf_CreateSymbol(elf, name);
+    shdr->sh_name = Elf_FindString(elf, name); 
+    sym->st_name = shdr->sh_name;
+    sym->st_info = ELF_ST_INFO(STB_LOCAL, STT_SECTION); 
+    sym->st_other = STV_DEFAULT;
+    sym->st_shndx = ndx;
+    sym->st_value = 0;
+    sym->st_size = 0;
+
+    /*
+    Elf_PushSection(elf);
+    Elf_UseSection(elf, ".symtab");
+    Elf_Sym sym;
+    sym.st_name = namendx; 
+    sym.st_info = ELF_ST_INFO(STB_LOCAL, STT_SECTION); 
+    sym.st_other = STV_DEFAULT;
+    sym.st_shndx = ndx;
+    sym.st_value = 0;
+    sym.st_size = 0;
+    Elf_PushBytes(elf, &sym, sizeof(sym));
+    Elf_PopSection(elf);
+    */
+
+    // Set default values
+    shdr->sh_flags = 0;  // No flags
+    shdr->sh_addr = 0;   // No virtual address
+    shdr->sh_offset = 0; // NOTE: Remember to set this when compiling
+    shdr->sh_size = 0;   // Data is completely empty 
+    shdr->sh_link = 0;   // No link
+    shdr->sh_info = 0;   // No info
+    shdr->sh_addralign = 0; // No alignment
+    shdr->sh_entsize = 0; // Not an entry table 
+
+    // Return
+    return shdr;
+}

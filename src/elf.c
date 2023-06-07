@@ -204,3 +204,23 @@ Elf_Shdr *Elf_CreateSection(Elf_Builder *elf, const char *name)
     // Return
     return shdr;
 }
+
+
+Elf_Shdr *Elf_SetSection(Elf_Builder *elf, Elf_Word id)
+{
+    elf->eb_current_section = id;
+    return Elf_GetSection(elf);
+}
+
+void Elf_PushSection(Elf_Builder *elf)
+{
+    elf->eb_section_stack[elf->eb_section_head] = 
+        elf->eb_current_section;
+    elf->eb_section_head += 1;
+}
+
+void Elf_PopSection(Elf_Builder *elf)
+{
+    elf->eb_section_head -= 1;
+    elf->eb_current_section = elf->eb_section_stack[elf->eb_section_head];
+}

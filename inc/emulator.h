@@ -7,6 +7,7 @@
 #define EMU_MEM_SIZE (0xffff + 1)
 /* Stack points to occupied location and goes down */
 
+/*
 typedef struct Emu {
     unsigned char *e_mem;
     Elf_Half e_reg[EMU_REG_NUM];
@@ -32,5 +33,6 @@ void Emu_Reset(Emu *emu);
 void Emu_Run(Emu *emu);
 void Emu_Dump(Emu *emu);
 void Emu_Destroy(Emu *emu);
+*/
 
 #endif /* _EMULATOR_H_ */ 

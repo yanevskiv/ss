@@ -368,10 +368,8 @@ void Asm_Compile(Elf_Builder *elf, FILE *input, int flags)
     int nread = 0;
     int mode = MODE_OK;
     ssize_t linelen;
-
     char *line = NULL;  // Whole line
-    char *currentSection = NULL;
-    
+
     while (mode != MODE_QUIT && (nread = getline(&line, &linelen, input)) != -1) {
         /*
          * Read line
@@ -448,6 +446,7 @@ void Asm_Compile(Elf_Builder *elf, FILE *input, int flags)
              */
             if (isOk)  {
                 argc = Asm_ExtractArguments(other, args, ARR_SIZE(args));
+                // TODO: Check arguments
             }
 
             /*
@@ -478,9 +477,9 @@ void Asm_Compile(Elf_Builder *elf, FILE *input, int flags)
                             if (ao->ao_type == AO_SYM) {
                                 Elf_Rela *rela = Elf_AddRelaSymb(elf, args[i]);
                                 int relaType = 
-                                      direcId == D_BYTE ? R_X86_64_8
-                                    : direcId == D_WORD ? R_X86_64_16
-                                    : direcId == D_WORD ? R_X86_64_32
+                                      direcId == D_BYTE  ? R_X86_64_8
+                                    : direcId == D_SHORT ? R_X86_64_16
+                                    : direcId == D_WORD  ? R_X86_64_32
                                     : R_X86_64_NONE;
                                 rela->r_offset = Elf_GetSectionSize(elf);
                                 rela->r_info = ELF_R_INFO(ELF_R_SYM(rela->r_info), relaType);
@@ -684,7 +683,11 @@ void Asm_Compile(Elf_Builder *elf, FILE *input, int flags)
                     } break;
 
                     case I_CALL: {
-                        
+                        // TODO
+                    } break;
+
+                    case I_RET: {
+                        // TODO
                     } break;
 
 
@@ -759,13 +762,18 @@ void Asm_Compile(Elf_Builder *elf, FILE *input, int flags)
 
 
                     case I_PUSH: {
-
+                        // TODO
                     } break;
 
                     case I_LD: {
+                        // TODO
                     } break;
 
                     case I_ST: {
+                        // TODO
+                    } break;
+
+                    case I_POP: {
 
                     } break;
 
@@ -888,7 +896,7 @@ int main(int argc, char *argv[])
     Asm_Compile(&elf, input, F_DEBUG);
 
     // Testing only
-    Elf_WriteDump(&elf, stdout);
+    //Elf_WriteDump(&elf, stdout);
 
     if (flags | F_HEX)  {
         Elf_WriteHex(&elf, output);

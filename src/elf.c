@@ -754,6 +754,7 @@ void _Elf_Buffer_ReadHexBytes(Elf_Buffer *buffer, FILE *input)
     }
 
     regfree(&re_hexline);
+    regfree(&re_hexdigit);
     if (line) {
         free(line);
     }
@@ -988,9 +989,9 @@ void Elf_Link(Elf_Builder *dest, Elf_Builder *src)
                         /* dest_sym->st_name - Set by Elf_UseSymbol() */
                         dest_sym->st_info = sym->st_info;
                         dest_sym->st_other = sym->st_other;
-                        /* dest_sym->st_shndx - Set by  by Elf_UseSymbol() */
-                        dest_sym->st_value= sym->st_value;
-                        dest_sym->st_size = sym->st_size;
+                        dest_sym->st_shndx = Elf_GetCurrentSection(dest);
+                        dest_sym->st_value = sym->st_value;
+                        dest_sym->st_size  = sym->st_size;
                         Elf_PopSection(dest);
                     }
                 }
@@ -1020,7 +1021,7 @@ void Elf_Link(Elf_Builder *dest, Elf_Builder *src)
                     const char *sym_name = Elf_GetSymbolName(src, symndx);
                     Elf_PopSection(src);
 
-                    // Import symbol if necessar
+                    // Import symbol if necessary
                     // What we actually want is the new symndx in the `dest`
                     Elf_PushSection(dest);
                     Elf_UseSection(dest, section_name);
@@ -1028,7 +1029,7 @@ void Elf_Link(Elf_Builder *dest, Elf_Builder *src)
                     /* dest_sym->st_name - Set by Elf_UseSymbol() */
                     dest_sym->st_info = sym->st_info;
                     dest_sym->st_other = sym->st_other;
-                    /* dest_sym->st_shndx - Set by  by Elf_UseSymbol() */
+                    dest_sym->st_shndx = Elf_GetCurrentSection(dest);
                     dest_sym->st_value= sym->st_value;
                     dest_sym->st_size = sym->st_size;
 

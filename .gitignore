@@ -1,6 +1,7 @@
 /dist/
 /src/*.o
 /test/*.o
+/test/*.hex
 assembler
 linker
 emulator

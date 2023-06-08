@@ -293,3 +293,18 @@ Elf_Shdr* Elf_GetSectionAt(Elf_Builder *elf, int at)
         return NULL;
     return &(elf->eb_shdr[at]);
 }
+
+int Elf_GetSectionCount(Elf_Builder *elf)
+{
+    return elf->eb_ehdr.e_shnum;
+}
+
+
+void Elf_SetSectionByName(Elf_Builder *elf, const char *name)
+{
+}
+
+Elf_Shdr *Elf_GetSection(Elf_Builder *elf)
+{
+    return &(elf->eb_shdr[elf->eb_current_section]);
+}

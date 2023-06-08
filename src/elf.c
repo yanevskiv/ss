@@ -343,3 +343,37 @@ void Elf_PushWord(Elf_Builder *elf, Elf_Word word)
     Elf_Buffer_PushWord(Elf_GetBuffer(elf), word);
     Elf_GetSection(elf)->sh_size = Elf_GetBuffer(elf)->eb_size;
 }
+
+void Elf_PushSkip(Elf_Builder *elf, Elf_Word count, Elf_Byte fill)
+{
+    Elf_Buffer_PushSkip(Elf_GetBuffer(elf), count, fill);
+    Elf_GetSection(elf)->sh_size = Elf_GetBuffer(elf)->eb_size;
+}
+
+const char *Elf_GetSectionName(Elf_Builder *elf)
+{
+    Elf_Shdr* shdr = Elf_GetSection(elf);
+    Elf_PushSection(elf);
+    Elf_SetSection(elf, elf->eb_ehdr.e_shstrndx);
+    const char *result = (const char*)(Elf_GetBuffer(elf)->eb_data + shdr->sh_name);
+    Elf_PopSection(elf);
+    return result;
+}
+
+Elf_Section Elf_FindSection(Elf_Builder *elf, const char *name)
+{
+    Elf_Word index;
+    Elf_PushSection(elf);
+    int found = 0;
+    for (index = 1; index <= Elf_GetSectionCount(elf); index++) {
+        Elf_SetSection(elf, index);
+        if (strcmp(Elf_GetSectionName(elf), name) == 0) {
+            found = 1;
+            break;
+        }
+    }
+    Elf_PopSection(elf);
+    if (! found)
+        return 0;
+    return index;
+}

@@ -308,3 +308,20 @@ Elf_Shdr *Elf_GetSection(Elf_Builder *elf)
 {
     return &(elf->eb_shdr[elf->eb_current_section]);
 }
+
+Elf_Buffer *Elf_GetBuffer(Elf_Builder *elf)
+{
+    return &(elf->eb_buffer[elf->eb_current_section]);
+}
+
+void Elf_PushByte(Elf_Builder *elf, unsigned char byte)
+{
+    Elf_Buffer_PushByte(Elf_GetBuffer(elf), byte);
+    Elf_GetSection(elf)->sh_size = Elf_GetBuffer(elf)->eb_size;
+}
+
+void Elf_PushString(Elf_Builder *elf, const char *str)
+{
+    Elf_Buffer_PushString(Elf_GetBuffer(elf), str);
+    Elf_GetSection(elf)->sh_size = Elf_GetBuffer(elf)->eb_size;
+}

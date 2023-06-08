@@ -532,3 +532,53 @@ int Elf_GetRelaCount(Elf_Builder* elf)
     Elf_PopSection(elf);
     return count;
 }
+
+static void Elf_UseRelaSection(Elf_Builder *elf)
+{
+    char rela_name[ELF_MAX_SECTION_NAME];
+    sprintf(rela_name, ".rela%s", Elf_GetSectionName(elf));
+    if (! Elf_SectionExists(elf, rela_name)) {
+        // Create rela section if it doesn't exist
+        Elf_Shdr *shdr = Elf_CreateSection(elf, rela_name);
+        shdr->sh_type = SHT_RELA; // Set type to string table
+        shdr->sh_flags = 0;  // No flags
+        shdr->sh_addr = 0;   // No virtual address
+        shdr->sh_offset = 0; // NOTE: Remember to set this when compiling
+        shdr->sh_size = 0;   // Data is completely empty 
+        shdr->sh_link = Elf_GetCurrentSection(elf); // Links to section that contains relas
+        shdr->sh_info = 0;   // No info
+        shdr->sh_addralign = 0; // No alignment
+        shdr->sh_entsize = sizeof(Elf_Rela); // Not an entry table 
+    }
+    Elf_UseSection(elf, rela_name);
+}
+
+Elf_Rela *Elf_AddRela(Elf_Builder *elf, Elf_Word symndx)
+{
+    char rela_name[ELF_MAX_SECTION_NAME];
+    sprintf(rela_name, ".rela%s", Elf_GetSectionName(elf));
+    
+    Elf_PushSection(elf);
+    Elf_UseRelaSection(elf);
+
+    // Add rela
+    Elf_Off off = Elf_GetSectionSize(elf);
+    Elf_Rela rela;
+    rela.r_offset = 0;
+    rela.r_info = ELF_R_INFO(symndx, R_X86_64_NONE);
+    rela.r_addend = 0;
+    Elf_PushBytes(elf, &rela, sizeof(rela));
+    Elf_Rela *ret = (Elf_Rela*) (Elf_GetSectionData(elf) + off);
+    Elf_PopSection(elf);
+    return ret;
+}
+
+Elf_Rela *Elf_AddRelaSymb(Elf_Builder *elf, const char *symb) 
+{
+    if (! Elf_SymbolExists(elf, symb)) {
+        Elf_Sym *sym = Elf_CreateSymbol(elf, symb);
+        sym->st_shndx = SHN_UNDEF;
+    }
+    Elf_Word symndx = Elf_FindSymbol(elf, symb);
+    Elf_AddRela(elf, symndx);
+}

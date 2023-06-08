@@ -246,3 +246,26 @@ void Elf_Buffer_PushByte(Elf_Buffer* buffer, unsigned char byte)
     buffer->eb_data[buffer->eb_size] = byte;
     buffer->eb_size += 1;
 }
+
+void Elf_Buffer_PushHalf(Elf_Buffer* buffer, Elf_Half half)
+{
+    Elf_Buffer_PushByte(buffer, (half) & 0xff);
+    Elf_Buffer_PushByte(buffer, (half >> 8) & 0xff);
+}
+
+void Elf_Buffer_PushWord(Elf_Buffer* buffer, Elf_Word word)
+{
+    Elf_Buffer_PushByte(buffer, word & 0xff);
+    Elf_Buffer_PushByte(buffer, (word >> 8)  & 0xff);
+    Elf_Buffer_PushByte(buffer, (word >> 16) & 0xff);
+    Elf_Buffer_PushByte(buffer, (word >> 24) & 0xff);
+}
+
+void Elf_Buffer_PushString(Elf_Buffer* buffer, const char *str)
+{
+    while (*str) {
+        Elf_Buffer_PushByte(buffer, *str);
+        str ++;
+    }
+    Elf_Buffer_PushByte(buffer, '\0');
+}

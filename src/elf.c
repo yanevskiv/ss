@@ -325,3 +325,21 @@ void Elf_PushString(Elf_Builder *elf, const char *str)
     Elf_Buffer_PushString(Elf_GetBuffer(elf), str);
     Elf_GetSection(elf)->sh_size = Elf_GetBuffer(elf)->eb_size;
 }
+
+void Elf_PushBytes(Elf_Builder *elf, void *bytes, size_t size)
+{
+    Elf_Buffer_PushBytes(Elf_GetBuffer(elf), bytes, size);
+    Elf_GetSection(elf)->sh_size = Elf_GetBuffer(elf)->eb_size;
+}
+
+void Elf_PushHalf(Elf_Builder *elf, Elf_Half half)
+{
+    Elf_Buffer_PushHalf(Elf_GetBuffer(elf), half);
+    Elf_GetSection(elf)->sh_size = Elf_GetBuffer(elf)->eb_size;
+}
+
+void Elf_PushWord(Elf_Builder *elf, Elf_Word word)
+{
+    Elf_Buffer_PushWord(Elf_GetBuffer(elf), word);
+    Elf_GetSection(elf)->sh_size = Elf_GetBuffer(elf)->eb_size;
+}

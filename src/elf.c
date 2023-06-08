@@ -475,3 +475,35 @@ int Elf_GetSymbolCount(Elf_Builder *elf)
     Elf_PopSection(elf);
     return count;
 }
+
+Elf_Word Elf_FindSymbol(Elf_Builder *elf, const char *name)
+{
+    Elf_Word strtab_ndx = Elf_FindSection(elf, ".strtab");
+    Elf_Word symtab_ndx = Elf_FindSection(elf, ".symtab");
+
+    // Get strings
+    Elf_PushSection(elf);
+    Elf_SetSection(elf, strtab_ndx);
+    const char *strings = (const char *) Elf_GetSectionData(elf);
+    Elf_PopSection(elf);
+
+    Elf_Word i, size = Elf_GetSymbolCount(elf);
+    for (i = 0; i < size; i++) {
+        Elf_Sym *sym = Elf_GetSymbol(elf, i);
+        if (strcmp(strings + sym->st_name, name) == 0) {
+            return i;
+        }
+    }
+    return 0;
+}
+
+int Elf_SymbolExists(Elf_Builder *elf, const char *name)
+{
+    return Elf_FindSymbol(elf, name) != 0;
+}
+
+
+Elf_Sym *Elf_FetchSymbol(Elf_Builder *elf, const char *name)
+{
+    return Elf_GetSymbol(elf, Elf_FindSymbol(elf, name));
+}

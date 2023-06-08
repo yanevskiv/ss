@@ -507,3 +507,28 @@ Elf_Sym *Elf_FetchSymbol(Elf_Builder *elf, const char *name)
 {
     return Elf_GetSymbol(elf, Elf_FindSymbol(elf, name));
 }
+
+Elf_Sym *Elf_UseSymbol(Elf_Builder *elf, const char *name)
+{
+    if (! Elf_SymbolExists(elf, name)) {
+        return Elf_CreateSymbol(elf, name);
+    }
+    return Elf_FetchSymbol(elf, name);
+}
+
+Elf_Section Elf_GetCurrentSection(Elf_Builder *elf)
+{
+    return elf->eb_current_section;
+}
+
+int Elf_GetRelaCount(Elf_Builder* elf)
+{
+    char rela_name[ELF_MAX_SECTION_NAME];
+    sprintf(rela_name, ".rela%s", Elf_GetSectionName(elf));
+    if (! Elf_SectionExists(elf, rela_name))
+        return 0;
+    Elf_PushSection(elf);
+    int count = Elf_GetSectionSize(elf) / sizeof(Elf_Rela);
+    Elf_PopSection(elf);
+    return count;
+}

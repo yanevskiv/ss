@@ -419,3 +419,59 @@ const char *Elf_GetSymbolName(Elf_Builder *elf, int index)
     Elf_PopSection(elf);
     return result;
 }
+
+Elf_Sym *Elf_CreateSymbol(Elf_Builder *elf, const char *name)
+{
+    // Get current section index
+    Elf_Section section_ndx = elf->eb_current_section;
+
+    // Add symbol name to string table (.strtab)
+    //Elf_PushSection(elf);
+    //Elf_UseSection(elf, ".strtab");
+    //Elf_Word name_ndx = (Elf_Word)Elf_GetSection(elf)->sh_size;
+    //Elf_PushString(elf, name);
+    //Elf_PopSection(elf);
+    Elf_Word name_ndx = Elf_AddUniqueString(elf, name);
+
+    // Add symbol to symbol table (.symtab)
+    Elf_PushSection(elf);
+    Elf_UseSection(elf, ".symtab");
+
+    // Remember where the symbol is located
+    Elf_Word off = Elf_GetSectionSize(elf);
+    Elf_Sym sym;
+    sym.st_name = name_ndx; 
+    sym.st_info = ELF_ST_INFO(STB_LOCAL, STT_NOTYPE); 
+    sym.st_other = STV_DEFAULT;
+    //sym.st_shndx = section_ndx; 
+    sym.st_shndx = SHN_UNDEF; // It's better if the symbol is created with an empty section
+    sym.st_value = 0;
+    sym.st_size = 0;
+    Elf_PushBytes(elf, &sym, sizeof(sym));
+    //Get symbol
+    Elf_Sym *ret = (Elf_Sym*)(Elf_GetSectionData(elf) + off);
+    Elf_PopSection(elf);
+
+    return ret;
+}
+
+Elf_Shdr *Elf_FetchSection(Elf_Builder *elf, const char *name)
+{
+    
+    Elf_PushSection(elf);
+    Elf_Word ndx = Elf_FindSection(elf, name);
+    Elf_SetSection(elf, ndx);
+    Elf_Shdr *shdr = Elf_GetSection(elf);
+    Elf_PopSection(elf);
+    return shdr;
+}
+
+int Elf_GetSymbolCount(Elf_Builder *elf)
+{
+    Elf_PushSection(elf);
+    Elf_UseSection(elf, ".symtab");
+    Elf_Shdr *shdr = Elf_GetSection(elf);
+    int count = shdr->sh_size / sizeof(Elf_Sym) /* shdr->sh_entsize */;
+    Elf_PopSection(elf);
+    return count;
+}

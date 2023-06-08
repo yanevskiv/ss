@@ -269,3 +269,27 @@ void Elf_Buffer_PushString(Elf_Buffer* buffer, const char *str)
     }
     Elf_Buffer_PushByte(buffer, '\0');
 }
+
+void Elf_Buffer_PushBytes(Elf_Buffer* buffer, void *bytes, size_t size)
+{
+    size_t i;
+    unsigned char *data = (unsigned char*) bytes;
+    for (int i = 0; i < size; i++)  {
+        Elf_Buffer_PushByte(buffer, data[i]);
+    }
+}
+
+void Elf_Buffer_PushSkip(Elf_Buffer* buffer, Elf_Word count, Elf_Byte fill)
+{
+    while (count > 0) {
+        Elf_Buffer_PushByte(buffer, fill);
+        count -= 1;
+    }
+}
+
+Elf_Shdr* Elf_GetSectionAt(Elf_Builder *elf, int at)
+{
+    if (at < 0 || at >= Elf_GetSectionCount(elf))
+        return NULL;
+    return &(elf->eb_shdr[at]);
+}

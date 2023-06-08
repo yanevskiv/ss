@@ -395,3 +395,27 @@ Elf_Xword Elf_GetSectionSize(Elf_Builder *elf)
 {
     return Elf_GetBuffer(elf)->eb_size;
 }
+
+unsigned char *Elf_GetSectionData(Elf_Builder *elf)
+{
+    return Elf_GetBuffer(elf)->eb_data;
+}
+
+Elf_Sym *Elf_GetSymbol(Elf_Builder *elf, int index)
+{
+    Elf_PushSection(elf);
+    Elf_UseSection(elf, ".symtab");
+    unsigned char *data = Elf_GetSectionData(elf);
+    Elf_PopSection(elf);
+    return (Elf_Sym*)(data + index * sizeof(Elf_Sym));
+}
+
+const char *Elf_GetSymbolName(Elf_Builder *elf, int index)
+{
+    Elf_Sym *sym = Elf_GetSymbol(elf, index);
+    Elf_PushSection(elf);
+    Elf_UseSection(elf, ".strtab");
+    char *result = Elf_GetSectionData(elf) + sym->st_name;
+    Elf_PopSection(elf);
+    return result;
+}

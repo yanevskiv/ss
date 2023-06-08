@@ -377,3 +377,21 @@ Elf_Section Elf_FindSection(Elf_Builder *elf, const char *name)
         return 0;
     return index;
 }
+
+int Elf_SectionExists(Elf_Builder *elf, const char *name)
+{
+    return Elf_FindSection(elf, name) != 0;
+}
+
+Elf_Shdr *Elf_UseSection(Elf_Builder *elf, const char *name)
+{
+    if (! Elf_SectionExists(elf, name))
+        Elf_CreateSection(elf, name);
+    Elf_SetSection(elf, Elf_FindSection(elf, name));
+    return Elf_GetSection(elf);
+}
+
+Elf_Xword Elf_GetSectionSize(Elf_Builder *elf)
+{
+    return Elf_GetBuffer(elf)->eb_size;
+}

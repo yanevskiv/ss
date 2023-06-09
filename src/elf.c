@@ -898,3 +898,37 @@ void Elf_WriteDump(Elf_Builder* elf, FILE* output)
         Elf_PopSection(elf);
     }
 }
+
+Elf_Word Elf_FindString(Elf_Builder *elf, const char *str)
+{
+    Elf_PushSection(elf);
+    Elf_UseSection(elf, ".strtab");
+    Elf_Word start = 0;
+    int found = 0;
+    while ((! found) && start < Elf_GetSectionSize(elf)) {
+        char *check_str = Elf_GetSectionData(elf) + start;
+        Elf_Word len = strlen(check_str);
+        if (strcmp(str, check_str) == 0) {
+            found = 1;
+            break;
+        }
+        start += len + 1;
+    }
+    Elf_PopSection(elf);
+    return found ? start : 0;
+}
+
+int Elf_StringExists(Elf_Builder *elf, const char *str)
+{
+    return Elf_FindString(elf, str) != 0;
+}
+
+Elf_Word Elf_AddString(Elf_Builder* elf, const char *str)
+{
+    Elf_PushSection(elf);
+    Elf_UseSection(elf, ".strtab");
+    Elf_Word at = Elf_GetSectionSize(elf);
+    Elf_PushString(elf, str);
+    Elf_PopSection(elf);
+    return at;
+}

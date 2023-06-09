@@ -582,3 +582,64 @@ Elf_Rela *Elf_AddRelaSymb(Elf_Builder *elf, const char *symb)
     Elf_Word symndx = Elf_FindSymbol(elf, symb);
     Elf_AddRela(elf, symndx);
 }
+
+void *Elf_GetSectionEntry(Elf_Builder *elf, Elf_Word at) 
+{
+    Elf_Word off = at * Elf_GetSection(elf)->sh_entsize;
+    if (off > Elf_GetSectionSize(elf))
+        return NULL;
+    return (void*)(Elf_GetSectionData(elf) + off);
+}
+
+
+static const char *_Elf_GetRelaTypeName(Elf_Word type)
+{
+    /*
+    return 
+      type == R_X86_64_NONE      ? "R_X86_64_NONE"
+    : type == R_X86_64_64        ? "R_X86_64_64"
+    : type == R_X86_64_PC32      ? "R_X86_64_PC32"
+    : type == R_X86_64_GOT32     ? "R_X86_64_GOT32"
+    : type == R_X86_64_PLT32     ? "R_X86_64_PLT32"
+    : type == R_X86_64_COPY      ? "R_X86_64_COPY"
+    : type == R_X86_64_GLOB_DAT  ? "R_X86_64_GLOB_DAT"
+    : type == R_X86_64_JUMP_SLOT ? "R_X86_64_JUMP_SLOT"
+    : type == R_X86_64_RELATIVE  ? "R_X86_64_RELATIVE"
+    : type == R_X86_64_GOTPCREL  ? "R_X86_64_GOTPCREL"
+    : type == R_X86_64_32        ? "R_X86_64_32"
+    : type == R_X86_64_32S       ? "R_X86_64_32S"
+    : type == R_X86_64_16        ? "R_X86_64_16"
+    : type == R_X86_64_PC16      ? "R_X86_64_PC16"
+    : type == R_X86_64_8         ? "R_X86_64_8"
+    : "R_UNKNOWN";
+    */
+   return 
+      type == R_SS_NONE ? "R_SS_NONE"
+    : type == R_SS_32   ? "R_SS_32"
+    : type == R_SS_16   ? "R_SS_16"
+    : type == R_SS_8    ? "R_SS_8"
+    : type == R_SS_LD32 ? "R_SS_LD32"
+    : type == R_SS_LD16 ? "R_SS_LD16"
+    : type == R_SS_LD8  ? "R_SS_LD8"
+    : "R_UNKNOWN";
+}
+
+// Used for updating sh_offset in header files
+static void _Elf_PrepareForWriting(Elf_Builder *elf)
+{
+    int i;
+    Elf_Off off = sizeof(Elf_Ehdr);
+
+    /* TODO: include program table */
+
+    // Sections
+    for (i = 1; i <= Elf_GetSectionCount(elf); i++) {
+        Elf_PushSection(elf);
+        Elf_SetSection(elf, i);
+        Elf_GetSection(elf)->sh_size = Elf_GetBuffer(elf)->eb_size;
+        Elf_GetSection(elf)->sh_offset = off;
+        off += Elf_GetSection(elf)->sh_size;
+        Elf_PopSection(elf);
+    }
+    elf->eb_ehdr.e_shoff = off;
+}

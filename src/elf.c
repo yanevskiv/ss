@@ -643,3 +643,76 @@ static void _Elf_PrepareForWriting(Elf_Builder *elf)
     }
     elf->eb_ehdr.e_shoff = off;
 }
+
+static size_t _WriteHexBytesColor(void *data, size_t count, size_t index, FILE *output, int color)
+{
+    unsigned char *bytes = data;
+    int i = 0, j = 0;
+    const int row_count = 16;
+    if (color > 0)
+        fprintf(output, "\e[%dm", color);
+    for (j = 0; j <= count / row_count; j++) {
+        for (i = 0; i < row_count && i + j * row_count < count; i++, index++) {
+            if (index % row_count == 0) {
+                if (color > 0)
+                    fprintf(output, "\e[0m", color);
+                if (index != 0)
+                    fprintf(output, "\n");
+                fprintf(output, "%04d: ", index);
+                if (color > 0)
+                    fprintf(output, "\e[%dm", color);
+            } else if (index % 4 == 0) {
+                fprintf(output, " ");
+            }
+            fprintf(output, "%02x " , bytes[i + j * row_count]);
+        }
+    }
+    if (color > 0)
+        fprintf(output, "\e[0m", color);
+    return count;
+}
+
+static size_t _WriteHexBytes(void *data, size_t count, size_t index, FILE *output)
+{
+    _WriteHexBytesColor(data, count, index, output, 0);
+}
+
+
+
+void Elf_WriteHexColor(Elf_Builder *elf, FILE *output, int color)
+{
+    _Elf_PrepareForWriting(elf);
+    size_t index = 0;
+
+    // Write ELF header
+    index += _WriteHexBytesColor(&elf->eb_ehdr, sizeof(elf->eb_ehdr), index, output, color ? RED : 0);
+
+    // Write sections data
+    int i;
+    for (i = 1; i <= Elf_GetSectionCount(elf); i++) {
+        Elf_PushSection(elf);
+        Elf_SetSection(elf, i);
+        index += _WriteHexBytesColor(
+            Elf_GetSectionData(elf),
+            Elf_GetSectionSize(elf),
+            index,
+            output,
+            color ? ((i % 2 == 0) ? NORMAL : FAINT) : 0
+        );
+        Elf_PopSection(elf);
+    }
+
+    // Write section header
+    for (i = 0; i <= Elf_GetSectionCount(elf); i++) {
+        Elf_PushSection(elf);
+        Elf_SetSection(elf, i);
+        index += _WriteHexBytesColor(
+            Elf_GetSection(elf),
+            sizeof(Elf_Shdr),
+            index,
+            output,
+            color ? ((i % 2 == 0) ? YELLOW : GREEN) : 0
+        );
+        Elf_PopSection(elf);
+    }
+}

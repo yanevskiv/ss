@@ -716,3 +716,101 @@ void Elf_WriteHexColor(Elf_Builder *elf, FILE *output, int color)
         Elf_PopSection(elf);
     }
 }
+
+void Elf_WriteHex(Elf_Builder *elf, FILE *output)
+{
+    Elf_WriteHexColor(elf, output, 0);
+}
+
+
+
+void _Elf_Buffer_ReadHexBytes(Elf_Buffer *buffer, FILE *input)
+{
+    regex_t re_hexline; // Matches comment
+    regex_t re_hexdigit; // Matches comment
+    regmatch_t matches[128];
+    if (regcomp(&re_hexline, "^([0-9a-fA-F]*:\\s*)(.*)", REG_EXTENDED)) {
+        fprintf(stderr, "Error compiling regex for hex lines\n");
+        return;
+    }
+    if (regcomp(&re_hexdigit, "\\s*([0-9a-fA-F]+)\\s*", REG_EXTENDED)) {
+        fprintf(stderr, "Error compiling regex for hex digits\n");
+        return;
+    }
+
+    int nread = 0;
+    char *line = NULL;
+    ssize_t linelen;
+    int x = 4 + 1;
+    int linenum = 0;
+    while ((nread = getline(&line, &linelen, input)) != -1) {
+        linenum += 1;
+        int linelen = strlen(line) - 1;
+        line[linelen] = '\0';
+
+        // Read addr
+        char *linebuf = line;
+        if (regexec(&re_hexline, linebuf , ARR_SIZE(matches), matches, 0) == 0) {
+            int k = 2;
+            regoff_t eo = matches[k].rm_eo;
+            regoff_t so = matches[k].rm_so;
+            linebuf += so;
+        }
+        char *token = strtok(linebuf, " \t");
+        while (token) {
+            int byte = strtol(token, NULL, 16);
+            token = strtok(NULL, " \t");
+            Elf_Buffer_PushByte(buffer, byte);
+        }
+    }
+
+    regfree(&re_hexline);
+    regfree(&re_hexdigit);
+    if (line) {
+        free(line);
+    }
+}
+
+void Elf_ReadHexInit(Elf_Builder *elf, FILE *input)
+{
+    // Read header
+    Elf_Buffer buffer;
+    Elf_Buffer_Init(&buffer);
+    _Elf_Buffer_ReadHexBytes(&buffer, input);
+    memcpy(&elf->eb_ehdr, buffer.eb_data, sizeof(Elf_Ehdr));
+
+    // TODO:  Program
+
+    // Init setions
+    elf->eb_section_head = 0;
+    elf->eb_shdr_size = ELF_MAX_SECTIONS;
+    elf->eb_shdr = calloc(elf->eb_shdr_size, sizeof(Elf_Shdr));
+    assert(elf->eb_shdr != NULL);
+    elf->eb_buffer = calloc(elf->eb_shdr_size, sizeof(Elf_Buffer));
+    assert(elf->eb_buffer != NULL);
+    for (int i = 0; i < elf->eb_shdr_size; i++) {
+        Elf_Buffer_Init(&elf->eb_buffer[i]);
+    }
+    elf->eb_current_section = SHN_UNDEF;
+
+    // Read section headers
+    for (int i = 0; i <= elf->eb_ehdr.e_shnum; i++) {
+        memcpy(
+            &elf->eb_shdr[i], 
+            buffer.eb_data + elf->eb_ehdr.e_shoff + i * sizeof(Elf_Shdr), 
+            sizeof(Elf_Shdr)
+        );
+    }
+
+    // Read section data
+    for (int i = 1; i <= elf->eb_ehdr.e_shnum; i++) {
+        Elf_Buffer_PushBytes(
+            &elf->eb_buffer[i],
+            buffer.eb_data + elf->eb_shdr[i].sh_offset,
+            elf->eb_shdr[i].sh_size
+        );
+    }
+
+    // Free memory
+    Elf_Buffer_Destroy(&buffer);
+}

@@ -814,3 +814,87 @@ void Elf_ReadHexInit(Elf_Builder *elf, FILE *input)
     // Free memory
     Elf_Buffer_Destroy(&buffer);
 }
+
+void Elf_WriteDump(Elf_Builder* elf, FILE* output)
+{
+    int i;
+    for (i = 1; i <= Elf_GetSectionCount(elf); i++) {
+        Elf_PushSection(elf);
+        Elf_SetSection(elf, i);
+        Elf_Shdr *shdr = Elf_GetSection(elf);
+        unsigned char *data = Elf_GetSectionData(elf);
+        fprintf(output, "#%s@0x%08x\n", Elf_GetSectionName(elf), shdr->sh_addr);
+        switch (shdr->sh_type) {
+            case SHT_SYMTAB: {
+                fprintf(output, "Num  Value   Size Type  Bind Ndx Name\n");
+                int i, size = shdr->sh_size / shdr->sh_entsize;
+                for (i = 0; i < size; i++) {
+                    Elf_Sym *sym = Elf_GetSymbol(elf, i);
+                    int type = ELF_ST_TYPE(sym->st_info);
+                    int bind = ELF_ST_BIND(sym->st_info);
+                    fprintf(output, "%3d: %08x %3d %5s %4s ", i, 
+                        sym->st_value,
+                        sym->st_size,
+                        type == STT_OBJECT ? "OBJ"
+                            : type == STT_FUNC ? "FUNC"
+                            : type == STT_SECTION ? "SCTN"
+                            : type == STT_COMMON ?  "COMN"
+                            : "NOTYP",
+                        bind == STB_GLOBAL ? "GLOB" 
+                            : bind == STB_WEAK ? "WEAK"
+                            : "LOC"
+                    );
+                    if (sym->st_shndx == SHN_UNDEF) {
+                        fprintf(output, "UND");
+                    } else if (sym->st_shndx == SHN_ABS) {
+                        fprintf(output, "ABS");
+                    } else {
+                        fprintf(output, "%3d", sym->st_shndx);
+                    }
+                    fprintf(output, " %s", Elf_GetSymbolName(elf, i));
+                    fputc('\n', output);
+                }
+            } break;
+            case SHT_RELA: {
+                fprintf(output, "Num  Offset      Type      Symbol  Addend\n");
+                int i, size = Elf_GetSectionSize(elf) / sizeof(Elf_Rela);
+                for (i = 0; i < size; i++) {
+                    Elf_Rela *rela =  Elf_GetSectionEntry(elf, i);
+                    Elf_Half type = ELF_R_TYPE(rela->r_info);
+                    Elf_Word symndx = ELF_R_SYM(rela->r_info);
+                    fprintf(output, "%3d: %08d %10s %3d(%s) %4d\n", i,
+                        rela->r_offset,
+                        _Elf_GetRelaTypeName(type),
+                        symndx,
+                        Elf_GetSymbolName(elf, symndx),
+                        rela->r_addend
+                    );
+
+                }
+            } break;
+            case SHT_STRTAB: {
+                int iter = 0;
+                unsigned char* start = data;
+                unsigned char* str = start;
+                while (str - start < Elf_GetSectionSize(elf)) {
+                    fprintf(output, "%3d: \"%s\"\n", iter, str);
+                    iter += 1;
+                    str += strlen(str) + 1;
+                }
+            } break;
+            default: {
+                int i, size = Elf_GetSectionSize(elf);
+                for (i = 0; i < size; i++) {
+                    fprintf(output, "%02x ", data[i]);
+                    if ((i + 1) % 8 == 0) {
+                        fputc('\n', output);
+                    } else if ((i + 1) % 4 == 0) {
+                        fputc(' ', output);
+                    }
+                }
+                fputc('\n', output);
+            } break;
+        }
+        Elf_PopSection(elf);
+    }
+}

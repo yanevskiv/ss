@@ -35,6 +35,72 @@
         fflush(stderr); \
     } while (0)
 
+// List of instructions
+static Asm_InstrInfo Asm_InstrList[] = {
+    { "halt",  I_HALT,  0x00,       0, I_ARGS_NONE },
+    { "int",   I_INT,   0x10,       0, I_ARGS_NONE },
+    { "iret",  I_IRET,  0x00,       0, I_ARGS_NONE },
+    { "call",  I_CALL,  0x00,       1, I_ARGS_BOP },
+    { "ret",   I_RET,   0x00,       0, I_ARGS_NONE },
+    { "jmp",   I_JMP,   BRANCH_JMP, 1, I_ARGS_BOP },
+    { "beq",   I_BEQ,   BRANCH_BEQ, 3, I_ARGS_REG_REG_BOP },
+    { "bne",   I_BNE,   BRANCH_BNE, 3, I_ARGS_REG_REG_BOP },
+    { "bgt",   I_BGT,   BRANCH_BGT, 3, I_ARGS_REG_REG_BOP },
+    { "push",  I_PUSH,  0x81,       1, I_ARGS_REG },
+    { "pop",   I_POP,   0x93,       1, I_ARGS_REG },
+    { "xchg",  I_XCHG,  0x40,       2, I_ARGS_REG_REG },
+    { "add",   I_ADD,   ALU_ADD,    2, I_ARGS_REG_REG },
+    { "sub",   I_SUB,   ALU_SUB,    2, I_ARGS_REG_REG },
+    { "mul",   I_MUL,   ALU_MUL,    2, I_ARGS_REG_REG },
+    { "div",   I_DIV,   ALU_DIV,    2, I_ARGS_REG_REG },
+    { "not",   I_NOT,   ALU_NOT,    1, I_ARGS_REG },
+    { "and",   I_AND,   ALU_AND,    2, I_ARGS_REG_REG },
+    { "or",    I_OR,    ALU_OR ,    2, I_ARGS_REG_REG },
+    { "xor",   I_XOR,   ALU_XOR,    2, I_ARGS_REG_REG },
+    { "shl",   I_SHL,   ALU_SHL,    2, I_ARGS_REG_REG },
+    { "shr",   I_SHR,   ALU_SHR,    2, I_ARGS_REG_REG },
+    { "ld",    I_LD,    0x00,       2, I_ARGS_DOP_REG },
+    { "st",    I_ST,    0x00,       2, I_ARGS_REG_DOP },
+    { "csrrd", I_CSRRD, 0x90,       2, I_ARGS_CSR_REG },
+    { "csrwr", I_CSRWR, 0x94,       2, I_ARGS_REG_CSR },
+    { "probe", I_PROBE, 0x00,       1, I_ARGS_DOP },
+};
+
+// List of directives
+static Asm_DirecInfo Asm_DirecList[] = {
+    { ".global",  D_GLOBAL,  D_ARGS_SYM_LIST },
+    { ".globl",   D_GLOBAL,  D_ARGS_SYM_LIST },
+    { ".extern",  D_EXTERN,  D_ARGS_SYM_LIST },
+    { ".section", D_SECTION, D_ARGS_SYM      },
+    { ".byte",    D_BYTE,    D_ARGS_SYM_LIT  },
+    { ".half",    D_HALF,    D_ARGS_SYM_LIT  },
+    { ".word",    D_WORD,    D_ARGS_SYM_LIT  },
+    { ".skip",    D_SKIP,    D_ARGS_LIT      },
+    { ".ascii",   D_ASCII,   D_ARGS_STR      },
+    { ".equ",     D_EQU,     D_ARGS_SYM_EQU  },
+    { ".end",     D_END,     D_ARGS_NONE     },
+};
+
+
+// List of equ operators
+Equ_OperInfo Equ_OperList[] = {
+    { "pos", O_POS, 2,  1, O_ASOC_RTL }, // +
+    { "neg", O_NEG, 2,  1, O_ASOC_RTL }, // -
+    { "~",   O_NOT, 2,  1, O_ASOC_LTR },
+    { "*",   O_MUL, 3,  2, O_ASOC_LTR },
+    { "/",   O_DIV, 3,  2, O_ASOC_LTR },
+    { "%",   O_MOD, 3,  2, O_ASOC_LTR },
+    { "+",   O_ADD, 4,  2, O_ASOC_LTR },
+    { "-",   O_SUB, 4,  2, O_ASOC_LTR },
+    { "<<",  O_SHL, 5,  2, O_ASOC_LTR },
+    { ">>",  O_SHR, 5,  2, O_ASOC_LTR },
+    { "&",   O_AND, 8,  2, O_ASOC_LTR },
+    { "^",   O_XOR, 9,  2, O_ASOC_LTR },
+    { "|",   O_OR,  10, 2, O_ASOC_LTR },
+    { "(",   O_LBR, 15, 2, O_ASOC_LTR },
+    { ")",   O_RBR, 15, 2, O_ASOC_LTR },
+};
+
 // Equ count
 int Asm_EquCount = 0;
 
@@ -52,6 +118,17 @@ size_t Asm_LineCap = 0;
 
 // Current asm mode
 Asm_ModeType Asm_CurrentMode = ASM_MODE_START;
+
+// Find instruction
+int Asm_FindInstrIdx(const char *instr)
+{
+    int i;
+    for (i = 0; i < ARR_SIZE(Asm_InstrList); i++) {
+        if (Str_Equals(instr, Asm_InstrList[i].i_name))
+            return i;
+    }
+    return -1;
+}
 
 static void show_help() 
 {

@@ -159,6 +159,40 @@ Elf_Sym *Asm_AddAbsSymbol(Elf_Builder *elf, const char *name, Elf_Addr value)
     return sym;
 }
 
+// Add relocation with respect to some symbol
+Elf_Rela *Asm_AddRela(Elf_Builder *elf, const char *symbol, Elf_Half type, Elf_Sxword addend)
+{
+    Elf_Rela *rela = Elf_AddRelaSymb(elf, symbol);
+    rela->r_offset = Elf_GetSectionSize(elf);
+    rela->r_info   = ELF_R_INFO(ELF_R_SYM(rela->r_info), type);
+    rela->r_addend = addend;
+    return rela;
+}
+
+// Load zero value into register
+// gprD <= 0
+void Asm_PushXorZero(Elf_Builder *elf, Asm_RegType gprD)
+{
+    // gprD <= gprD ^ gprD
+    Elf_PushByte(elf, PACK(OC_LOGIC, MOD_LOGIC_XOR));
+    Elf_PushByte(elf, PACK(gprD, gprD));
+    Elf_PushByte(elf, PACK(gprD, 0x0));
+    Elf_PushByte(elf, 0x00);
+}
+
+// Load a byte into a register
+void Asm_PushLoadByte(Elf_Builder *elf, Asm_RegType rDest, Asm_Byte value)
+{
+    // rDest = 0
+    Asm_PushXorZero(elf, rDest);
+
+    // rDest += value
+    Elf_PushByte(elf, PACK(OC_LOAD, MOD_LOAD_1));
+    Elf_PushByte(elf, PACK(rDest, rDest));
+    Elf_PushByte(elf, PACK(0x0, 0x0));
+    Elf_PushByte(elf, value & 0xff);
+}
+
 static void show_help() 
 {
     const char *help = 

@@ -130,6 +130,35 @@ int Asm_FindInstrIdx(const char *instr)
     return -1;
 }
 
+// Find directive
+int Asm_FindDirecIdx(const char *direct)
+{
+    int i;
+    for (i = 0; i < ARR_SIZE(Asm_DirecList); i++) {
+        if (Str_Equals(direct, Asm_DirecList[i].d_name))
+            return i;
+    }
+    return -1;
+}
+
+// Add a label at current section location
+Elf_Sym *Asm_AddLabel(Elf_Builder *elf, const char *label)
+{
+    Elf_Sym *sym = Elf_UseSymbol(elf, label);
+    sym->st_shndx = Elf_GetCurrentSection(elf);
+    sym->st_value = Elf_GetSectionSize(elf);
+    return sym;
+}
+
+// Add absolute symbol
+Elf_Sym *Asm_AddAbsSymbol(Elf_Builder *elf, const char *name, Elf_Addr value)
+{
+    Elf_Sym *sym = Elf_UseSymbol(elf, name);
+    sym->st_shndx = SHN_ABS;
+    sym->st_value = value;
+    return sym;
+}
+
 static void show_help() 
 {
     const char *help = 

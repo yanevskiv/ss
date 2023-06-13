@@ -548,6 +548,27 @@ void Asm_PushLoadMemValue(Elf_Builder *elf, Asm_RegType gprD, Elf_Addr addr, con
     Elf_PushByte(elf, 0x00);
 }
 
+// Push `ld $literal, %gprD` instruction
+// gprD <= literal
+void Asm_PushLoadLiteralValue(Elf_Builder *elf, Asm_Word literal, Asm_RegType gprD)
+{
+    Asm_PushLoadValue(elf, gprD, literal, NULL);
+}
+
+// Push `ld $symbol, %gprD` instruction
+// gprD <= symbol
+void Asm_PushLoadSymbolValue(Elf_Builder *elf, const char *symName, Asm_RegType gprD)
+{
+    Asm_PushLoadValue(elf, gprD, 0x0, symName);
+}
+
+// Push `ld literal, %gprD` instruction
+// gprD <= mem32[literal]
+void Asm_PushLoadMemLiteralValue(Elf_Builder *elf, Asm_Addr literal, Asm_RegType gprD)
+{
+    Asm_PushLoadMemValue(elf, gprD, literal, NULL);
+}
+
 static void show_help() 
 {
     const char *help = 

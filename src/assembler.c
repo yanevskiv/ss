@@ -193,6 +193,58 @@ void Asm_PushLoadByte(Elf_Builder *elf, Asm_RegType rDest, Asm_Byte value)
     Elf_PushByte(elf, value & 0xff);
 }
 
+// Load a half into register
+// This operation requires assistance from another 'helper' register (recommended: IDX (13) or ADR (12))
+void Asm_PushLoadHalf(Elf_Builder *elf, Asm_RegType rDest, Asm_Half value, Asm_RegType rHelp)
+{
+    int d = rDest;
+    int s = rHelp;
+    unsigned char code[] = {
+        0x63, PACK(s, s),     PACK(s, 0),   0x00,                   // rHelp = 0x0
+        0x91, PACK(s, s),     0x00,         0x08,                   // rHelp = 0x8
+        0x63, PACK(d, d),     PACK(d, 0),   0x00,                   // rDest = 0
+        0x91, PACK(d, d),     0x00,         ((value >> 8) & 0xff),  // rDest += (value >> 8) & 0xff
+        0x70, PACK(d, d),     PACK(s, 0),   0x00,                   // rDest <<= rHelp
+        0x91, PACK(d, d),     0x00,         (value & 0xff),         // rDest += value & 0xff
+        0x63, PACK(s, s),     PACK(s, 0),   0x00,                   // rHelp = 0
+    };
+    Elf_PushBytes(elf, code, sizeof(code));
+}
+
+// Load a word into register
+// This operation requires assistance from another 'helper' register (recommended: IDX (13) or ADR (12))
+void Asm_PushLoadWord(Elf_Builder *elf, Asm_RegType rDest, Asm_Word value, Asm_RegType rHelp)
+{
+
+    int d = rDest;
+    int s = rHelp;
+    unsigned char code[] = {
+        //0xa0, 0x00,           0x00,         0x00,                   // lock
+        0x63, PACK(s, s),     PACK(s, 0),   0x00,                   // rHelp = 0x0
+        0x91, PACK(s, s),     0x00,         0x08,                   // rHelp = 0x8
+        0x63, PACK(d, d),     PACK(d, 0),   0x00,                   // rDest = 0
+        0x91, PACK(d, d),     0x00,         ((value >> 24) & 0xff), // rDest += (value >> 24) & 0xff
+        0x70, PACK(d, d),     PACK(s, 0),   0x00,                   // rDest <<= r1
+        0x91, PACK(d, d),     0x00,         ((value >> 16) & 0xff), // rDest += (value >> 16) & xff
+        0x70, PACK(d, d),     PACK(s, 0),   0x00,                   // rDest <<= r1
+        0x91, PACK(d, d),     0x00,         ((value >> 8) & 0xff),  // rDest += (value >> 8) & 0xff
+        0x70, PACK(d, d),     PACK(s, 0),   0x00,                   // rDest <<= r1
+        0x91, PACK(d, d),     0x00,         (value & 0xff),         // rDest += value & 0xff
+        0x63, PACK(s, s),     PACK(s, 0),   0x00,                   // rHelp = 0
+        //0xa1, 0x00,           0x00,         0x00,                   // unlock
+    };
+    Elf_PushBytes(elf, code, sizeof(code));
+}
+
+// Push any type of instruction
+void Asm_PushInstr(Elf_Builder *elf, Asm_OcType oc, Asm_ModType mod, Asm_RegType ra, Asm_RegType rb, Asm_RegType rc, Asm_DispType disp)
+{
+    Elf_PushByte(elf, ((oc & 0xf) << 4) | ((mod & 0xf) << 0));
+    Elf_PushByte(elf, ((ra & 0xf) << 4) | ((rb  & 0xf) << 0));
+    Elf_PushByte(elf, ((rc & 0xf) << 4) | (((disp >> 8) & 0xf) << 0));
+    Elf_PushByte(elf, disp & 0xff);
+}
+
 static void show_help() 
 {
     const char *help = 

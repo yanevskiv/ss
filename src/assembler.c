@@ -389,6 +389,36 @@ void Asm_PushSub(Elf_Builder *elf, Asm_RegType gprS, Asm_RegType gprD)
     Elf_PushByte(elf, PACK(0x0, 0x0));
 }
 
+// Push binary `mul` operation
+void Asm_PushMul(Elf_Builder *elf, Asm_RegType gprS, Asm_RegType gprD)
+{
+    // gprD <= gprD * gprS
+    Elf_PushByte(elf, PACK(OC_ARITH, MOD_ARITH_MUL));
+    Elf_PushByte(elf, PACK(gprD, gprD));
+    Elf_PushByte(elf, PACK(gprS, 0x0));
+    Elf_PushByte(elf, PACK(0x0, 0x0));
+}
+
+// Push binary `div` operation
+void Asm_PushDiv(Elf_Builder *elf, Asm_RegType gprS, Asm_RegType gprD)
+{
+    // gprD <= gprD / gprS
+    Elf_PushByte(elf, PACK(OC_ARITH, MOD_ARITH_DIV));
+    Elf_PushByte(elf, PACK(gprD, gprD));
+    Elf_PushByte(elf, PACK(gprS, 0x0));
+    Elf_PushByte(elf, PACK(0x0, 0x0));
+}
+
+// Push unary `not` operation
+void Asm_PushNot(Elf_Builder *elf, Asm_RegType gprD)
+{
+    // gprD <= ~gprD
+    Elf_PushByte(elf, PACK(OC_LOGIC, MOD_LOGIC_NOT));
+    Elf_PushByte(elf, PACK(gprD, gprD));
+    Elf_PushByte(elf, 0x00);
+    Elf_PushByte(elf, 0x00);
+}
+
 static void show_help() 
 {
     const char *help = 

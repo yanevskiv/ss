@@ -449,6 +449,37 @@ void Asm_PushXor(Elf_Builder *elf, Asm_RegType gprS, Asm_RegType gprD)
     Elf_PushByte(elf, PACK(0x0, 0x0));
 }
 
+// Push binary `shl` operation
+void Asm_PushShl(Elf_Builder *elf, Asm_RegType gprS, Asm_RegType gprD)
+{
+    // gprD <= gprD << gprS
+    Elf_PushByte(elf, PACK(OC_SHIFT, MOD_SHIFT_LEFT));
+    Elf_PushByte(elf, PACK(gprD, gprD));
+    Elf_PushByte(elf, PACK(gprS, 0x0));
+    Elf_PushByte(elf, PACK(0x0, 0x0));
+}
+
+// Push binary `shr` operation
+void Asm_PushShr(Elf_Builder *elf, Asm_RegType gprS, Asm_RegType gprD)
+{
+    // gprD <= gprD >> gprS
+    Elf_PushByte(elf, PACK(OC_SHIFT, MOD_SHIFT_RIGHT));
+    Elf_PushByte(elf, PACK(gprD, gprD));
+    Elf_PushByte(elf, PACK(gprS, 0x0));
+    Elf_PushByte(elf, PACK(0x0, 0x0));
+}
+
+// Push `csrrd` instruction
+// (Load a control register value into a general purpose register)
+void Asm_PushCsrrd(Elf_Builder *elf, Asm_RegType csrS, Asm_RegType gprD)
+{
+    // gprD <= csrS
+    Elf_PushByte(elf, PACK(OC_LOAD, MOD_LOAD_0));
+    Elf_PushByte(elf, PACK(gprD, csrS));
+    Elf_PushByte(elf, 0x00);
+    Elf_PushByte(elf, 0x00);
+}
+
 static void show_help() 
 {
     const char *help = 

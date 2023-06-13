@@ -480,6 +480,74 @@ void Asm_PushCsrrd(Elf_Builder *elf, Asm_RegType csrS, Asm_RegType gprD)
     Elf_PushByte(elf, 0x00);
 }
 
+// Push `csrwr` instruction
+// (Store a general purpse register value into a control register)
+void Asm_PushCsrwr(Elf_Builder *elf, Asm_RegType gprS, Asm_RegType csrD)
+{
+    // csrD <= gprS
+    Elf_PushByte(elf, PACK(OC_LOAD, MOD_LOAD_4));
+    Elf_PushByte(elf, PACK(csrD, gprS));
+    Elf_PushByte(elf, 0x00);
+    Elf_PushByte(elf, 0x00);
+}
+
+// Load a word into register using literal or symbol
+// gprD <= literal | symbol
+// Side effects:
+//  - ADR register will be invalidated if gprD = { IDX, SP, PC }
+//  - IDX register will be invalidated in all cases
+void Asm_PushLoadValue(Elf_Builder *elf, Asm_RegType gprD, Elf_Word literal, const char *symName)
+{
+    if (symName != NULL) {
+        // Add relocation for the next instruction if symbol name is present
+        Asm_AddRela(elf, symName, R_SS_LD32, 0);
+    }
+    switch (gprD) {
+        case SP:
+        case PC: {
+            // Load word into ADR register with the help of IDX
+            Asm_PushLoadWord(elf, ADR, literal, IDX);
+
+            // Exchange ADR with PC or SP
+            Asm_PushXchg(elf, ADR, gprD);
+        } break;
+        case IDX: {
+            // Load word into IDX with the help of ADR
+            Asm_PushLoadWord(elf, IDX, literal, ADR);
+        } break;
+        default: {
+            // Load word into gprD with the help of IDX
+            Asm_PushLoadWord(elf, gprD, literal, IDX);
+        } break;
+    }
+}
+
+// Load a word from memory into register using literal or symbol
+// gprD <= mem32[literal | symbol];
+// Side effects:
+//  - IDX register will be invalidated (zeroed out, unless gprD is IDX)
+//  - ADR register will be invalidated (containing the address, unless gprD is ADR)
+void Asm_PushLoadMemValue(Elf_Builder *elf, Asm_RegType gprD, Elf_Addr addr, const char *symName)
+{
+    if (symName != NULL) {
+        // Add relocation for load word
+        Asm_AddRela(elf, symName, R_SS_LD32, 0);
+    }
+
+    // Load address into ADR with the help of IDX
+    Asm_PushLoadWord(elf, ADR, addr, IDX);
+
+    // Zero out the IDX register (need a zero somewhere for the next instruction)
+    Asm_PushXorZero(elf, IDX);
+
+    // Load word into regigster gprD from address in regsiter ADR
+    // gprD <= mem32[ADR + IDX + 0]
+    Elf_PushByte(elf, PACK(OC_LOAD, MOD_LOAD_2));
+    Elf_PushByte(elf, PACK(gprD, ADR));
+    Elf_PushByte(elf, PACK(IDX, 0x0));
+    Elf_PushByte(elf, 0x00);
+}
+
 static void show_help() 
 {
     const char *help = 

@@ -419,6 +419,36 @@ void Asm_PushNot(Elf_Builder *elf, Asm_RegType gprD)
     Elf_PushByte(elf, 0x00);
 }
 
+// Push binary `and` operation
+void Asm_PushAnd(Elf_Builder *elf, Asm_RegType gprS, Asm_RegType gprD)
+{
+    // gprD <= gprD & gprS
+    Elf_PushByte(elf, PACK(OC_LOGIC, MOD_LOGIC_AND));
+    Elf_PushByte(elf, PACK(gprD, gprD));
+    Elf_PushByte(elf, PACK(gprS, 0x0));
+    Elf_PushByte(elf, PACK(0x0, 0x0));
+}
+
+// Push binary `or` operation
+void Asm_PushOr(Elf_Builder *elf, Asm_RegType gprS, Asm_RegType gprD)
+{
+    // gprD <= gprD | gprS
+    Elf_PushByte(elf, PACK(OC_LOGIC, MOD_LOGIC_OR));
+    Elf_PushByte(elf, PACK(gprD, gprD));
+    Elf_PushByte(elf, PACK(gprS, 0x0));
+    Elf_PushByte(elf, PACK(0x0, 0x0));
+}
+
+// Push binary `xor` operation
+void Asm_PushXor(Elf_Builder *elf, Asm_RegType gprS, Asm_RegType gprD)
+{
+    // gprD <= gprD ^ gprS
+    Elf_PushByte(elf, PACK(OC_LOGIC, MOD_LOGIC_XOR));
+    Elf_PushByte(elf, PACK(gprD, gprD));
+    Elf_PushByte(elf, PACK(gprS, 0x0));
+    Elf_PushByte(elf, PACK(0x0, 0x0));
+}
+
 static void show_help() 
 {
     const char *help = 

@@ -245,6 +245,44 @@ void Asm_PushInstr(Elf_Builder *elf, Asm_OcType oc, Asm_ModType mod, Asm_RegType
     Elf_PushByte(elf, disp & 0xff);
 }
 
+// Push `halt` instruction
+// Halts simulation
+void Asm_PushHalt(Elf_Builder *elf)
+{
+    Elf_PushByte(elf, PACK(OC_HALT, 0x0));
+    Elf_PushByte(elf, 0x00);
+    Elf_PushByte(elf, 0x00);
+    Elf_PushByte(elf, 0x00);
+}
+
+// Push `int` instruction
+// Causes a software interrupt
+void Asm_PushInt(Elf_Builder *elf)
+{
+    Elf_PushByte(elf, PACK(OC_INT, 0x0));
+    Elf_PushByte(elf, 0x00);
+    Elf_PushByte(elf, 0x00);
+    Elf_PushByte(elf, 0x00);
+}
+
+
+// Push `iret` instruction
+// push status; push pc;
+static void Asm_PushBasicIret(Elf_Builder *elf)
+{
+    // status <= mem32[SP]; SP <= SP + 4
+    Elf_PushByte(elf, PACK(OC_LOAD, MOD_LOAD_7));
+    Elf_PushByte(elf, PACK(STATUS, SP));
+    Elf_PushByte(elf, 0x00);
+    Elf_PushByte(elf, 0x04);
+
+    // pc <= mem32[SP]; SP <= SP + 4
+    Elf_PushByte(elf, PACK(OC_LOAD, MOD_LOAD_3));
+    Elf_PushByte(elf, PACK(PC, SP));
+    Elf_PushByte(elf, 0x00);
+    Elf_PushByte(elf, 0x04);
+}
+
 static void show_help() 
 {
     const char *help = 

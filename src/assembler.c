@@ -283,6 +283,51 @@ static void Asm_PushBasicIret(Elf_Builder *elf)
     Elf_PushByte(elf, 0x04);
 }
 
+static void Asm_PushExtendedIret(Elf_Builder *elf)
+{
+    // Extended iret
+    // idx <= mem32[SP]; SP <= SP + 4
+    Elf_PushByte(elf, PACK(OC_LOAD, MOD_LOAD_3));
+    Elf_PushByte(elf, PACK(IDX, SP));
+    Elf_PushByte(elf, 0x00);
+    Elf_PushByte(elf, 0x04);
+
+    // adr <= mem32[SP]; SP <= SP + 4
+    Elf_PushByte(elf, PACK(OC_LOAD, MOD_LOAD_3));
+    Elf_PushByte(elf, PACK(ADR, SP));
+    Elf_PushByte(elf, 0x00);
+    Elf_PushByte(elf, 0x04);
+
+    // status <= mem32[SP]; SP <= SP + 4
+    Elf_PushByte(elf, PACK(OC_LOAD, MOD_LOAD_7));
+    Elf_PushByte(elf, PACK(STATUS, SP));
+    Elf_PushByte(elf, 0x00);
+    Elf_PushByte(elf, 0x04);
+
+    // pc <= mem32[SP]; SP <= SP + 4
+    Elf_PushByte(elf, PACK(OC_LOAD, MOD_LOAD_3));
+    Elf_PushByte(elf, PACK(PC, SP));
+    Elf_PushByte(elf, 0x00);
+    Elf_PushByte(elf, 0x04);
+}
+
+// Push `iret` instruction
+void Asm_PushIret(Elf_Builder *elf)
+{
+    Asm_PushExtendedIret(elf);
+}
+
+// Push `ret` instruction
+// pop pc;
+void Asm_PushRet(Elf_Builder *elf)
+{
+    // pc <= mem32[SP]; SP <= SP + 4
+    Elf_PushByte(elf, PACK(OC_LOAD, MOD_LOAD_3));
+    Elf_PushByte(elf, PACK(PC, SP));
+    Elf_PushByte(elf, 0x00);
+    Elf_PushByte(elf, 0x04);
+}
+
 static void show_help() 
 {
     const char *help = 

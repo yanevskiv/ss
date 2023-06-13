@@ -359,6 +359,36 @@ void Asm_PushXchg(Elf_Builder *elf, Asm_RegType gpr1, Asm_RegType gpr2)
     Elf_PushByte(elf, 0x00);
 }
 
+// Perform a binary ALU operation (+ - * / & | ^ << >>)
+void Asm_PushALU(Elf_Builder *elf, Asm_AluType op, Asm_RegType gprS, Asm_RegType gprD)
+{
+    // gprD <= gprD OP gprS
+    Elf_PushByte(elf, op);
+    Elf_PushByte(elf, PACK(gprD, gprD));
+    Elf_PushByte(elf, PACK(gprS, 0x0));
+    Elf_PushByte(elf, 0x00);
+}
+
+// Push binary `add` operation
+void Asm_PushAdd(Elf_Builder *elf, Asm_RegType gprS, Asm_RegType gprD)
+{
+    // gprD <= gprD + gprS
+    Elf_PushByte(elf, PACK(OC_ARITH, MOD_ARITH_ADD));
+    Elf_PushByte(elf, PACK(gprD, gprD));
+    Elf_PushByte(elf, PACK(gprS, 0x0));
+    Elf_PushByte(elf, PACK(0x0, 0x0));
+}
+
+// Push binary `sub` operation
+void Asm_PushSub(Elf_Builder *elf, Asm_RegType gprS, Asm_RegType gprD)
+{
+    // gprD <= gprD - gprS
+    Elf_PushByte(elf, PACK(OC_ARITH, MOD_ARITH_SUB));
+    Elf_PushByte(elf, PACK(gprD, gprD));
+    Elf_PushByte(elf, PACK(gprS, 0x0));
+    Elf_PushByte(elf, PACK(0x0, 0x0));
+}
+
 static void show_help() 
 {
     const char *help = 

@@ -328,6 +328,37 @@ void Asm_PushRet(Elf_Builder *elf)
     Elf_PushByte(elf, 0x04);
 }
 
+// Push `push gprS` instruction
+// The stack is assumed to grow downwards (SP -= 4)
+void Asm_PushStackPush(Elf_Builder *elf, Asm_RegType gprS)
+{
+    // SP <= SP - 4; mem32[SP] <= gprS
+    Elf_PushByte(elf, PACK(OC_STORE, MOD_STORE_2));
+    Elf_PushByte(elf, PACK(SP, SP));
+    Elf_PushByte(elf, PACK(gprS, 0xf));
+    Elf_PushByte(elf, 0xfc);
+}
+
+// Push `pop %gprD` instruction (SP += 4)
+void Asm_PushStackPop(Elf_Builder *elf, Asm_RegType gprD)
+{
+    // gprD <= mem32[SP]; SP <= SP + 4
+    Elf_PushByte(elf, PACK(OC_LOAD, MOD_LOAD_3));
+    Elf_PushByte(elf, PACK(gprD, SP));
+    Elf_PushByte(elf, 0x00);
+    Elf_PushByte(elf, 0x04);
+}
+
+// Push binary `xchg` operation (swap two register values)
+void Asm_PushXchg(Elf_Builder *elf, Asm_RegType gpr1, Asm_RegType gpr2)
+{
+    // tmp <= gpr1; gpr1 <= gpr2; gpr2 <= tmp
+    Elf_PushByte(elf, PACK(OC_XCHG, 0x0));
+    Elf_PushByte(elf, PACK(0x0, gpr1));
+    Elf_PushByte(elf, PACK(gpr2, 0x0));
+    Elf_PushByte(elf, 0x00);
+}
+
 static void show_help() 
 {
     const char *help = 

@@ -861,6 +861,33 @@ void Asm_PushProbeReg(Elf_Builder *elf, Asm_RegType gprD)
     Elf_PushByte(elf, 0x00);
 }
 
+// Push `probe $lit`
+void Asm_PushProbeLit(Elf_Builder *elf, Asm_DispType lit)
+{
+    Elf_PushByte(elf, PACK(OC_PROBE, MOD_PROBE_LIT));
+    Elf_PushByte(elf, PACK(0x0, 0x0));
+    Elf_PushByte(elf, PACK(0x0, lit >> 8));
+    Elf_PushByte(elf, lit & 0xff);
+}
+
+// Push `probe [%reg + disp]`
+void Asm_PushProbeMemRegDisp(Elf_Builder *elf, Asm_RegType gprS, Asm_DispType disp)
+{
+    Elf_PushByte(elf, PACK(OC_PROBE, MOD_PROBE_MEM_REG_DISP));
+    Elf_PushByte(elf, PACK(gprS, 0x0));
+    Elf_PushByte(elf, PACK(0x0, disp >> 8));
+    Elf_PushByte(elf, disp & 0xff);
+}
+
+// Push `probe all`
+void Asm_PushProbeAll(Elf_Builder *elf)
+{
+    Elf_PushByte(elf, PACK(OC_PROBE, MOD_PROBE_ALL));
+    Elf_PushByte(elf, 0x00);
+    Elf_PushByte(elf, 0x00);
+    Elf_PushByte(elf, 0x00);
+}
+
 static void show_help() 
 {
     const char *help = 

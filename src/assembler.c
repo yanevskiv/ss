@@ -569,6 +569,38 @@ void Asm_PushLoadMemLiteralValue(Elf_Builder *elf, Asm_Addr literal, Asm_RegType
     Asm_PushLoadMemValue(elf, gprD, literal, NULL);
 }
 
+// Push `ld symbol, %gprD` instruction
+// gprD <= mem32[symbol]
+void Asm_PushLoadMemSymbolValue(Elf_Builder *elf, const char *symName, Asm_RegType gprD)
+{
+    Asm_PushLoadMemValue(elf, gprD, 0x0, symName);
+}
+
+// Push `ld  %gprS, %gprD` instruction 
+// gprD <= gprS
+void Asm_PushLoadReg(Elf_Builder *elf, Asm_RegType gprS, Asm_RegType gprD)
+{
+    // gprD <= gprS
+    Elf_PushByte(elf, PACK(OC_LOAD, MOD_LOAD_1));
+    Elf_PushByte(elf, PACK(gprD, gprS));
+    Elf_PushByte(elf, 0x00);
+    Elf_PushByte(elf, 0x00);
+}
+
+// Push `ld [%gprS + literal], %gprD` instruction 
+// gprD <= mem32[gprS + disp]
+void Asm_PushLoadMemRegDisp(Elf_Builder *elf, Asm_RegType gprS, Asm_DispType disp, Asm_RegType gprD)
+{
+    // Zero out the IDX register
+    Asm_PushXorZero(elf, IDX);
+
+    // gprD <= mem32[IDX + gprS + disp]; (note: IDX = 0)
+    Elf_PushByte(elf, PACK(OC_LOAD, MOD_LOAD_2));
+    Elf_PushByte(elf, PACK(gprD, IDX));
+    Elf_PushByte(elf, PACK(gprS, disp >> 8));
+    Elf_PushByte(elf, disp & 0xff);
+}
+
 static void show_help() 
 {
     const char *help = 

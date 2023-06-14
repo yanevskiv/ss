@@ -837,6 +837,30 @@ void Asm_PushBneSymbol(Elf_Builder *elf, Asm_RegType gpr1, Asm_RegType gpr2, con
     Asm_PushBranch(elf, BRANCH_BNE, 0x0, symName, gpr1, gpr2, 0);
 }
 
+// Push `bgt %reg1, %reg2, symbol` 
+// if (reg1 signed> reg2) pc <= symbol
+void Asm_PushBgtSymbol(Elf_Builder *elf, Asm_RegType gpr1, Asm_RegType gpr2, const char *symName)
+{
+    Asm_PushBranch(elf, BRANCH_BGT, 0x0, symName, gpr1, gpr2, 0);
+}
+
+// Push `call symbol` 
+// push pc; pc <= symbol
+void Asm_PushCallSymbol(Elf_Builder *elf, const char *symName)
+{
+    Asm_PushBranch(elf, BRANCH_CALL, 0x0, symName, 0, 0, 0);
+}
+
+
+// Push `probe %reg`
+void Asm_PushProbeReg(Elf_Builder *elf, Asm_RegType gprD)
+{
+    Elf_PushByte(elf, PACK(OC_PROBE, MOD_PROBE_REG));
+    Elf_PushByte(elf, PACK(gprD, 0x0));
+    Elf_PushByte(elf, 0x00);
+    Elf_PushByte(elf, 0x00);
+}
+
 static void show_help() 
 {
     const char *help = 

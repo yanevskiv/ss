@@ -816,6 +816,27 @@ void Asm_PushCallLiteral(Elf_Builder *elf, Elf_Addr addr)
     Asm_PushBranch(elf, BRANCH_CALL, addr, NULL, 0, 0, 0);
 }
 
+// Push `jmp symbol`
+// pc <= symbol
+void Asm_PushJmpSymbol(Elf_Builder *elf, const char *symName)
+{
+    Asm_PushBranch(elf, BRANCH_JMP, 0x0, symName, 0, 0, 0);
+}
+
+// Push `beq %reg1, %reg2, symbol` 
+// if (reg1 == reg2) pc <= symbol
+void Asm_PushBeqSymbol(Elf_Builder *elf, Asm_RegType gpr1, Asm_RegType gpr2, const char *symName)
+{
+    Asm_PushBranch(elf, BRANCH_BEQ, 0x0, symName, gpr1, gpr2, 0);
+}
+
+// Push `bne %reg1, %reg2, symbol` 
+// if (reg1 != reg2) pc <= symbol
+void Asm_PushBneSymbol(Elf_Builder *elf, Asm_RegType gpr1, Asm_RegType gpr2, const char *symName)
+{
+    Asm_PushBranch(elf, BRANCH_BNE, 0x0, symName, gpr1, gpr2, 0);
+}
+
 static void show_help() 
 {
     const char *help = 

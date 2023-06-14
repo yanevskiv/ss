@@ -741,6 +741,60 @@ void Asm_PushBranchReg(Elf_Builder *elf, Asm_BranchType op, Asm_RegType gprA, As
     Elf_PushByte(elf, disp & 0xff);
 }
 
+// Push branch addr/symbolAddr
+// if (gpr1 ?op gpr2) pc <= (addr | symAddr) + disp
+void Asm_PushBranch(Elf_Builder *elf, Asm_BranchType op, Asm_Addr addr, const char *symName, Asm_RegType gpr1, Asm_RegType gpr2, Asm_DispType disp)
+{
+    if (symName != NULL) {
+        // Add relocation for load word
+        Asm_AddRela(elf, symName, R_SS_LD32, 0);
+    }
+
+    // Load addr into ADR register with the help of IDX register
+    Asm_PushLoadWord(elf, ADR, addr, IDX);
+
+
+    // Prepare regsiter values
+    switch (op) {
+        case BRANCH_CALL:
+        case BRANCH_MEM_CALL:
+        {
+            // Zero out IDX register
+            Asm_PushXorZero(elf, IDX);
+            gpr1 = IDX;
+            gpr2 = 0;
+        } break;
+        case BRANCH_JMP:
+        case BRANCH_MEM_JMP: 
+        {
+            gpr1 = 0;
+            gpr2 = 0;
+        } break;
+    }
+
+
+    // Push branch instruction
+    Elf_PushByte(elf, op);
+    Elf_PushByte(elf, PACK(ADR, gpr1));
+    Elf_PushByte(elf, PACK(gpr2, disp >> 8));
+    Elf_PushByte(elf, disp & 0xff);
+}
+
+
+// Push `jmp literal` 
+// pc <= literal
+void Asm_PushJmpLiteral(Elf_Builder *elf, Elf_Addr addr)
+{
+    Asm_PushBranch(elf, BRANCH_JMP, addr, NULL, 0, 0, 0);
+}
+
+// Push `beq %reg1, %reg2, literal`
+// if (reg1 == reg2) pc <= literal
+void Asm_PushBeqLiteral(Elf_Builder *elf, Asm_RegType gpr1, Asm_RegType gpr2, Elf_Addr addr)
+{
+    Asm_PushBranch(elf, BRANCH_BEQ, addr, NULL, gpr1, gpr2, 0);
+}
+
 static void show_help() 
 {
     const char *help = 

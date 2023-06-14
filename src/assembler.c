@@ -601,6 +601,60 @@ void Asm_PushLoadMemRegDisp(Elf_Builder *elf, Asm_RegType gprS, Asm_DispType dis
     Elf_PushByte(elf, disp & 0xff);
 }
 
+// Push `ld [%gprS + symbol], %gprD` instruction 
+// gprD <= gprS + symDisp
+void Asm_PushLoadMemRegSymbolDisp(Elf_Builder *elf, Asm_RegType gprS, const char *symName, Asm_RegType gprD)
+{
+    // Zero out the IDX register
+    Asm_PushXorZero(elf, gprD);
+
+    // Add displacement relocation for next instruction
+    Asm_AddRela(elf, symName, R_SS_D12, 0);
+
+    // gprD <= mem32[IDX + gprS + disp]; (Note: IDX = 0)
+    Elf_PushByte(elf, PACK(OC_LOAD, MOD_LOAD_2));
+    Elf_PushByte(elf, PACK(gprD, IDX));
+    Elf_PushByte(elf, PACK(gprS, 0));
+    Elf_PushByte(elf, 0);
+}
+
+// Push `st %gprS, $literal` instruction
+// mem32[literal] <= gprS
+void Asm_PushStoreAddr(Elf_Builder *elf, Asm_RegType gprS, Elf_Addr addr)
+{
+    // Load address into ADR with the help of IDX
+    Asm_PushLoadWord(elf, ADR, addr, IDX);
+    
+    // Zero out the IDX register
+    Asm_PushXorZero(elf, IDX);
+
+    // mem32[ADR + IDX + 0] <= gprS
+    Elf_PushByte(elf, PACK(OC_STORE, MOD_STORE_0));
+    Elf_PushByte(elf, PACK(ADR, IDX));
+    Elf_PushByte(elf, PACK(gprS, 0x0));
+    Elf_PushByte(elf, 0x00);
+}
+
+// Push `st %gprS, $symbol` instruction
+// mem32[symbol] <= gprS
+void Asm_PushStoreSymbolAddr(Elf_Builder *elf, Asm_RegType gprS, const char *symName)
+{
+    // Add word loading relocation for the next set of instructions
+    Asm_AddRela(elf, symName, R_SS_LD32, 0);
+
+    // Load address into ADR with the help of IDX
+    Asm_PushLoadWord(elf, ADR, 0x0, IDX);
+    
+    // Zero out the IDX register
+    Asm_PushXorZero(elf, IDX);
+
+    // mem32[ADR + IDX + 0] <= gprS
+    Elf_PushByte(elf, PACK(OC_STORE, MOD_STORE_0));
+    Elf_PushByte(elf, PACK(ADR, IDX));
+    Elf_PushByte(elf, PACK(gprS, 0x0));
+    Elf_PushByte(elf, 0x00);
+}
+
 static void show_help() 
 {
     const char *help = 

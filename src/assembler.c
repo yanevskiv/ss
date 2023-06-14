@@ -699,6 +699,48 @@ void Asm_PushStoreReg(Elf_Builder *elf, Asm_RegType gprS, Asm_RegType gprD)
     Asm_PushLoadReg(elf, gprS, gprD);
 }
 
+// Push `st %gprS, [%gprD + disp]`
+// mem32[gprD + disp] <= gprS
+void Asm_PushStoreMemRegDisp(Elf_Builder *elf, Asm_RegType gprS, Asm_RegType gprD, Asm_DispType disp)
+{
+    // Zero out the IDX register
+    Asm_PushXorZero(elf, IDX);
+
+    // mem32[gprD + IDX + disp] <= gprS
+    Elf_PushByte(elf, PACK(OC_STORE, MOD_STORE_0));
+    Elf_PushByte(elf, PACK(gprD, IDX));
+    Elf_PushByte(elf, PACK(gprS, disp >> 8));
+    Elf_PushByte(elf, disp & 0xff);
+}
+
+// Push `st %gprS, [%gprD + symDisp]`
+// mem32[gprD + symDisp] <= gprS
+void Asm_PushStoreMemRegSymbolDisp(Elf_Builder *elf, Asm_RegType gprS, Asm_RegType gprD, const char *symName)
+{
+    // Zero out the IDX register
+    Asm_PushXorZero(elf, IDX);
+
+    // Add displacement relocation for the next instruction
+    Asm_AddRela(elf, symName, R_SS_D12, 0);
+
+    // mem32[gprD + IDX + 0] <= gprS
+    Elf_PushByte(elf, PACK(OC_STORE, MOD_STORE_0));
+    Elf_PushByte(elf, PACK(gprD, IDX));
+    Elf_PushByte(elf, PACK(gprS, 0x0));
+    Elf_PushByte(elf, 0x00);
+}
+
+
+// Push branch reg
+// if (gprB ?op gprC) pc <= regA + disp
+void Asm_PushBranchReg(Elf_Builder *elf, Asm_BranchType op, Asm_RegType gprA, Asm_RegType gprB, Asm_RegType gprC, Asm_DispType disp)
+{
+    Elf_PushByte(elf, op);
+    Elf_PushByte(elf, PACK(gprA, gprB));
+    Elf_PushByte(elf, PACK(gprC, disp >> 8));
+    Elf_PushByte(elf, disp & 0xff);
+}
+
 static void show_help() 
 {
     const char *help = 

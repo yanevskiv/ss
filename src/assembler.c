@@ -795,6 +795,27 @@ void Asm_PushBeqLiteral(Elf_Builder *elf, Asm_RegType gpr1, Asm_RegType gpr2, El
     Asm_PushBranch(elf, BRANCH_BEQ, addr, NULL, gpr1, gpr2, 0);
 }
 
+// Push `bne %reg1, %reg2, literal` 
+// if (reg1 != reg2) pc <= literal
+void Asm_PushBneLiteral(Elf_Builder *elf, Asm_RegType gpr1, Asm_RegType gpr2, Elf_Addr addr)
+{
+    Asm_PushBranch(elf, BRANCH_BNE, addr, NULL, gpr1, gpr2, 0);
+}
+
+// Push `bgt %reg1, %reg2, literal`
+// if (reg1 signed> reg2) pc <= literal
+void Asm_PushBgtLiteral(Elf_Builder *elf, Asm_RegType gpr1, Asm_RegType gpr2, Elf_Addr addr)
+{
+    Asm_PushBranch(elf, BRANCH_BGT, addr, NULL, gpr1, gpr2, 0);
+}
+
+// Push `call literal`
+// push pc; pc <= literal
+void Asm_PushCallLiteral(Elf_Builder *elf, Elf_Addr addr)
+{
+    Asm_PushBranch(elf, BRANCH_CALL, addr, NULL, 0, 0, 0);
+}
+
 static void show_help() 
 {
     const char *help = 

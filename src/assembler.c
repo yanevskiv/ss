@@ -1113,6 +1113,43 @@ int Asm_SplitArgs(const char *str, int size, char **args)
     return count;
 }
 
+// Find operator index by type
+int Equ_FindOperIdxByType(Equ_OperType type)
+{
+    int idx;
+    for (idx = 0; idx < ARR_SIZE(Equ_OperList); idx++) {
+        if (type == Equ_OperList[idx].oi_type)
+            return idx;
+    }
+    return -1;
+
+}
+
+// Find operator index by name
+int Equ_FindOperIdxByName(const char *name)
+{
+    int idx;
+    for (idx = 0; idx < ARR_SIZE(Equ_OperList); idx++) {
+        if (Str_Equals(Equ_OperList[idx].oi_name, name))
+            return idx;
+    }
+    return -1;
+}
+
+// prec(op1) <= prec(op2)
+int Equ_CmpOperPrec(Equ_OperType op1, Equ_OperType op2)
+{
+    int idx1 = Equ_FindOperIdxByType(op1);
+    int idx2 = Equ_FindOperIdxByType(op2);
+    if (idx1 != -1 && idx2 != -1) {
+        int prec1 = Equ_OperList[idx1].oi_prec ;
+        int prec2 = Equ_OperList[idx2].oi_prec;
+        return prec1 > prec2 ? 1 : prec1 < prec2 ? -1 : 0;
+    }
+    return -1;
+    
+}
+
 static void show_help() 
 {
     const char *help = 

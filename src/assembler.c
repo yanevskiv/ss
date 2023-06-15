@@ -888,6 +888,112 @@ void Asm_PushProbeAll(Elf_Builder *elf)
     Elf_PushByte(elf, 0x00);
 }
 
+// Parses general purpose registers:
+// 1. %sp (same as %r14)
+// 2. %pc (same as %r15)
+// 3. %r0-r15
+int Asm_ParseRegOperand(const char *str)
+{
+    if (Str_Equals(str, "%sp")) {
+        return 14;
+    } else if (Str_Equals(str, "%pc")) {
+        return 15;
+    } else if (Str_CheckMatch(str, "^%r([0-9]+)$"))  {
+        int reg = strtol(str + 2, NULL, 10);
+        if (reg < GPR_COUNT) 
+            return reg;
+    } 
+    return -1;
+}
+
+// Parses control registers:
+// 1. %status
+// 2. %handler
+// 3. %cause
+int Asm_ParseCsrOperand(const char *str)
+{
+    if (Str_Equals(str, "%status")) {
+        return 0;
+    } else if (Str_Equals(str, "%handler")) {
+        return 1;
+    } else if (Str_Equals(str, "%cause")) {
+        return 2;
+    }
+    return -1;
+}
+
+// Parses symbols / literals / registers / reg offsets:
+// 1.  $literal
+// 2.  $symbol
+// 3.  literal
+// 4.  symbol
+// 5.  %reg
+// 6.  [ %reg ]
+// 7.  [ %reg + literal ]
+// 8.  [ %reg + symbol ]
+Asm_OperandType *Asm_ParseDataOperand(const char *str)
+{
+    regmatch_t rm[MAX_REGEX_MATCHES];
+    char *extract1 = NULL, *extract2 = NULL;
+    Asm_OperandType *ao = calloc(1, sizeof(Asm_OperandType));
+    assert(ao != NULL);
+    ao->ao_type = AO_INVALID;
+
+    // Find by regex
+    if (Str_RegexMatch(str, XAO_CHAR_LIT, ARR_SIZE(rm), rm)) {
+        extract1 = Str_Substr(str, rm[1].rm_so, rm[1].rm_eo);
+        ao->ao_type = AO_LIT;
+        ao->ao_lit = Str_UnescapeChar(extract1);
+    } else if (Str_RegexMatch(str, XAO_LIT, ARR_SIZE(rm), rm)) {
+        extract1 = Str_Substr(str, rm[1].rm_so, rm[1].rm_eo);
+        ao->ao_type = AO_LIT;
+        ao->ao_lit = Str_ParseInt(extract1);
+    } else if (Str_RegexMatch(str, XAO_SYM, ARR_SIZE(rm), rm)) {
+        extract1 = Str_Substr(str, rm[1].rm_so, rm[1].rm_eo);
+        ao->ao_type = AO_SYM;
+        ao->ao_sym = strdup(extract1);
+    } else if (Str_RegexMatch(str, XAO_MEM_CHAR_LIT, ARR_SIZE(rm), rm)) {
+        extract1 = Str_Substr(str, rm[1].rm_so, rm[1].rm_eo);
+        ao->ao_type = AO_MEM_LIT;
+        ao->ao_lit = Str_UnescapeChar(extract1);
+    } else if (Str_RegexMatch(str, XAO_MEM_LIT, ARR_SIZE(rm), rm)) {
+        extract1 = Str_Substr(str, rm[1].rm_so, rm[1].rm_eo);
+        ao->ao_type = AO_MEM_LIT;
+        ao->ao_lit = Str_ParseInt(extract1);
+    } else if (Str_RegexMatch(str, XAO_MEM_SYM, ARR_SIZE(rm), rm)) {
+        extract1 = Str_Substr(str, rm[1].rm_so, rm[1].rm_eo);
+        ao->ao_type = AO_MEM_SYM;
+        ao->ao_sym = strdup(extract1);
+    } else if (Str_RegexMatch(str, XAO_REG, ARR_SIZE(rm), rm)) {
+        extract1 = Str_Substr(str, rm[1].rm_so, rm[1].rm_eo);
+        ao->ao_type = AO_REG;
+        ao->ao_reg = Asm_ParseRegOperand(extract1);
+    } else if (Str_RegexMatch(str, XAO_MEM_REG, ARR_SIZE(rm), rm)) {
+        extract1 = Str_Substr(str, rm[1].rm_so, rm[1].rm_eo);
+        ao->ao_type = AO_MEM_REG;
+        ao->ao_reg = Asm_ParseRegOperand(extract1);
+    } else if (Str_RegexMatch(str, XAO_MEM_REG_LIT, ARR_SIZE(rm), rm)) {
+        extract1 = Str_Substr(str, rm[1].rm_so, rm[1].rm_eo);
+        extract2 = Str_Substr(str, rm[2].rm_so, rm[2].rm_eo);
+        ao->ao_type = AO_MEM_REG_LIT;
+        ao->ao_reg = Asm_ParseRegOperand(extract1);
+        ao->ao_lit = Str_ParseInt(extract2);
+    } else if (Str_RegexMatch(str, XAO_MEM_REG_SYM, ARR_SIZE(rm), rm)) {
+        extract1 = Str_Substr(str, rm[1].rm_so, rm[1].rm_eo);
+        extract2 = Str_Substr(str, rm[2].rm_so, rm[2].rm_eo);
+        ao->ao_type = AO_MEM_REG_SYM;
+        ao->ao_reg = Asm_ParseRegOperand(extract1);
+        ao->ao_sym = strdup(extract2);
+    }
+
+    // Free memory
+    if (extract1)
+        free(extract1);
+    if (extract2)
+        free(extract2);
+    return ao;
+}
+
 static void show_help() 
 {
     const char *help = 

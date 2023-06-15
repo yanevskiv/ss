@@ -994,6 +994,125 @@ Asm_OperandType *Asm_ParseDataOperand(const char *str)
     return ao;
 }
 
+// Parses symbols / literals:
+// 1. literal
+// 2. symbol
+Asm_OperandType *Asm_ParseBranchOperand(const char *str)
+{
+    regmatch_t rm[MAX_REGEX_MATCHES];
+    char *extract = NULL;
+    Asm_OperandType *ao = calloc(1, sizeof(Asm_OperandType));
+    assert(ao != NULL);
+    ao->ao_type = AO_INVALID;
+    if (Str_RegexMatch(str, XAO_MEM_CHAR_LIT, ARR_SIZE(rm), rm)) {
+        extract = Str_Substr(str, rm[1].rm_so, rm[1].rm_eo);
+        ao->ao_type = AO_LIT;
+        ao->ao_lit = Str_UnescapeChar(extract);
+    } else if (Str_RegexMatch(str, XAO_MEM_LIT, ARR_SIZE(rm), rm)) {
+        extract = Str_Substr(str, rm[1].rm_so, rm[1].rm_eo);
+        ao->ao_type = AO_LIT;
+        ao->ao_lit = Str_ParseInt(extract);
+    } else if (Str_RegexMatch(str, XAO_MEM_SYM, ARR_SIZE(rm), rm)) {
+        extract = Str_Substr(str, rm[1].rm_so, rm[1].rm_eo);
+        ao->ao_type = AO_SYM;
+        ao->ao_sym = strdup(extract);
+    } 
+    if (extract)
+        free(extract);
+    return ao;
+}
+
+// Destroy parsed operand 
+void Asm_OperandDestroy(Asm_OperandType *ao)
+{
+    if (ao) {
+        ao->ao_type = AO_INVALID;
+        ao->ao_reg = 0;
+        ao->ao_lit = 0;
+        if (ao->ao_sym) {
+            free(ao->ao_sym);
+            ao->ao_sym = NULL;
+        }
+        free(ao);
+    }
+}
+
+// Split arguments (string and comment sensitive)
+// Strings in the string array `args` must be `free()`'d manually
+int Asm_SplitArgs(const char *str, int size, char **args)
+{
+    // Check empty
+    int empty = 1;
+    int index;
+    for (index = 0; str[index]; index++) {
+        if (str[index] == '#')
+            return 0;
+        if (! isspace(str[index])) {
+            empty = 0;
+            break;
+        }
+    }
+    if (empty)
+        return 0;
+
+    enum {
+        MODE_NORMAL,
+        MODE_STR,
+    } mode = MODE_NORMAL;
+    int comment = 0;
+    int count = 0;
+    int flush = 0;
+    int start = 0;
+    for (index = 0; str[index] && ! comment; index++) {
+        char here = str[index];
+        char next = str[index + 1];
+
+        switch (mode) {
+            case MODE_NORMAL: {
+                switch (here) {
+                    case ',': {
+                        flush = 1;
+                    } break;
+                    case '"': {
+                        mode = MODE_STR;
+                    } break;
+                    case '#': {
+                        comment = 1;
+                        flush = 1;
+                    } break;
+                };
+            } break;
+
+            case MODE_STR: {
+                switch (here) {
+                    case '\\': {
+                        if (next == '"') {
+                            index += 1;
+                        }
+                    } break;
+                    case '"': {
+                        mode = MODE_NORMAL;
+                    } break;
+                }
+            } break;
+        }
+
+        if (flush) {
+            args[count] = Str_Substr(str, start, index);
+            Str_Trim(args[count]);
+            count += 1;
+            start = index + 1;
+            flush = 0;
+        }
+    }
+    if (mode == MODE_NORMAL && ! comment) {
+        args[count] = Str_Substr(str, start, index);
+        Str_Trim(args[count]);
+        count += 1;
+    }
+    return count;
+}
+
 static void show_help() 
 {
     const char *help = 

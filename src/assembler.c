@@ -1150,6 +1150,350 @@ int Equ_CmpOperPrec(Equ_OperType op1, Equ_OperType op2)
     
 }
 
+// Add absolute symbol through an expression
+int Asm_AddEquSymbol(Elf_Builder *elf, const char *symName, const char *expression)
+{
+    // Trim symName and expression
+    char *equSymName = strdup(symName);
+    char *equExpression = strdup(expression);
+    Str_Trim(equSymName);
+    Str_Trim(equExpression);
+
+    // Prepare error flag
+    int equError = FALSE;
+
+    // Parse expression
+    char *tokenList[MAX_EQU_TOKENS] = { 0 };
+    int tokenCount;
+    if ((tokenCount = Str_RegexSplit(equExpression, X_OPERATOR, ARR_SIZE(tokenList), tokenList)) == 0) {
+        Show_EquError("Empty expression");
+        equError = TRUE;
+    } else {
+        // Parsing the expression should produce code in reverse polish notation that can be then executed
+        Equ_ElemInfo codeStack[MAX_EQU_TOKENS];
+        int codeCount = 0;
+
+        // Operator stack for the Shunting-Yard algorithm
+        Equ_OperType operStack[MAX_EQU_TOKENS];
+        int operCount = 0;
+
+        // Token types (current and previous)
+        Equ_TokenType tokenType = TOK_NONE;
+        Equ_TokenType prevTokenType = TOK_NONE;
+        
+        // Shunting-Yard algorithm
+        int tokenIdx;
+        for (tokenIdx = 0; tokenIdx < tokenCount && ! equError; tokenIdx++) {
+
+            // Fetch token and figure out its type
+            char *token = tokenList[tokenIdx];
+            Str_Trim(token);
+            if (Str_IsEmpty(token))
+                continue;
+
+            // Figure out token type
+            prevTokenType = tokenType;
+            tokenType = Str_CheckMatch(token, X_OPERATOR) 
+                ? TOK_OPERATOR
+                : TOK_SYMLIT;
+
+            // Parse token
+            switch (tokenType) {
+                // Parse operator token
+                case TOK_OPERATOR:
+                {
+                    if (Str_Equals(token, "(")) {
+                        // Push O_LBR to the operator stack
+                        operStack[operCount] = O_LBR;
+                        operCount += 1;
+                    } else if (Str_Equals(token, ")")) {
+                        // Pop all operators up to O_LBR i.e. '(' to the code stack
+                        // If opening brace is not found it's a parsing error.
+                        int foundLBR = 0;
+                        while (operCount > 0 && ! foundLBR)  {
+                            Equ_OperType operPeek = operStack[operCount - 1];
+                            if (operPeek == O_LBR) {
+                                foundLBR = 1;
+                                operCount -= 1;
+                            } else {
+                                codeStack[codeCount].ee_type = EE_OPERATOR;
+                                codeStack[codeCount].ee_oper = operPeek;
+                                codeCount += 1;
+                                operCount -= 1;
+                            }
+                        }
+                        if (! foundLBR) {
+                            Show_EquError("Unmatched parenthesis");
+                            equError = TRUE;
+                        } 
+
+                        // We treat the expression enclosed in parentheses `( ... )` as a symbol/literal.
+                        // This is necessary so that the unary '-' operator in an expression such as `(1 + 2) - 3`
+                        // would be treated as a binary (rather than unary) operator, for example.
+                        if (! equError) {
+                            tokenType = TOK_SYMLIT;
+                        }
+                    } else { 
+                        // Figure out which operator this is
+                        // '+' and '-' operator are binary operators if the previous token 
+                        // was a symbol/literal. Otherwise, they are unary.
+                        int operIdx = -1; 
+                        if ((prevTokenType != TOK_SYMLIT) && Str_Equals(token, "+")) {
+                            operIdx = Equ_FindOperIdxByType(O_POS);
+                        } else if ((prevTokenType != TOK_SYMLIT) && Str_Equals(token, "-")) {
+                            operIdx = Equ_FindOperIdxByType(O_NEG);
+                        } else {
+                            operIdx = Equ_FindOperIdxByName(token);
+                        }
+                        if (operIdx == -1) {
+                            Show_EquError("Unknown operator '%s'", token);
+                            equError = TRUE;
+                        } 
+
+                        // Push operator onto the operator stack if found
+                        if (! equError) {
+                            // Fetch operator type
+                            Equ_OperType oper = Equ_OperList[operIdx].oi_type;
+
+                            // Pop all operators that are greater or equal precedence to this operator
+                            while (operCount > 0) {
+                                Equ_OperType operPeek = operStack[operCount - 1];
+                                if (Equ_CmpOperPrec(oper, operPeek) < 0) 
+                                    break;
+                                codeStack[codeCount].ee_type = EE_OPERATOR;
+                                codeStack[codeCount].ee_oper = operStack[operCount - 1];
+                                codeCount += 1;
+                                operCount -= 1;
+                            }
+
+                            // Push operator onto the operator stack
+                            operStack[operCount] = oper;
+                            operCount += 1;
+                        }
+                    }
+                } break;
+
+                // Parse symbol or literal
+                case TOK_SYMLIT:
+                {
+                    Asm_OperandType *ao = Asm_ParseBranchOperand(token);
+                    switch (ao->ao_type) {
+                        // Literal
+                        case AO_LIT:
+                        {
+                            // Push literal value to the code stack
+                            codeStack[codeCount].ee_type = EE_VALUE;
+                            codeStack[codeCount].ee_value = ao->ao_lit;
+                            codeCount += 1;
+                        } break;
+
+                        // Symbol
+                        case AO_SYM:
+                        {
+                            const char *symName = ao->ao_sym;
+                            if (Str_Equals(symName, ".")) {
+                                // Push current location in the section onto the code stack
+                                Asm_Word value = Elf_GetSectionSize(elf);
+                                codeStack[codeCount].ee_type = EE_VALUE;
+                                codeStack[codeCount].ee_value = value;
+                                codeCount += 1;
+                            } else {
+                                // Push symbol value onto the code stack (if symbol exists and is defined)
+                                int symError = TRUE;
+                                if (Elf_SymbolExists(elf, symName)) {
+                                    Elf_Sym *sym = Elf_UseSymbol(elf, symName);
+                                    if (sym->st_shndx != SHN_UNDEF) {
+                                        codeStack[codeCount].ee_type = EE_VALUE;
+                                        codeStack[codeCount].ee_value = sym->st_value;
+                                        codeCount += 1;
+                                        symError = FALSE;
+                                    }
+                                }
+                                if (symError) {
+                                    Show_EquError("Undefined symbol '%s'", symName);
+                                    equError = TRUE;
+                                }
+                            }
+                        } break;
+
+                        // Can't parse this token
+                        default: 
+                        {
+                            Show_EquError("Invalid expression '%s' (Cannot parse token '%s')\n", equExpression, token);
+                            equError = TRUE;
+                        } break;
+                    }
+                    Asm_OperandDestroy(ao);
+                } break;
+            }
+        }
+
+        // Completely pop the operator stack onto the code stack
+        if (! equError) {
+            while (operCount > 0 && ! equError) {
+                // Peek the next operator
+                Equ_OperType oper = operStack[operCount - 1];
+
+                // Parentheses shouldn't be in the operator stack at this point
+                if (oper == O_LBR || oper == O_RBR) {
+                    Show_EquError("Invalid expression '%s' (Unmatched parenthesis)", equExpression);
+                    equError = TRUE;
+                } 
+
+                // Pop the operator from the operator stack onto the code stack
+                if (! equError) {
+                    codeStack[codeCount].ee_type = EE_OPERATOR;
+                    codeStack[codeCount].ee_oper = oper;
+                    codeCount += 1;
+                    operCount -= 1;
+                }
+            }
+        }
+
+        // Execute the code
+        Asm_Word wordStack[MAX_EQU_STACK];
+        int wordCount = 0;
+        int codeIdx = 0;
+        for (codeIdx = 0; codeIdx < codeCount && ! equError; codeIdx++) {
+            // Peek the next element
+            Equ_ElemInfo elem = codeStack[codeIdx];
+
+            // Parse the element
+            switch (elem.ee_type) {
+                case EE_OPERATOR:
+                {
+                    // Fetch operator type and prepare result
+                    Equ_OperType operType = elem.ee_oper;
+                    Asm_Word result = 0x0;
+
+                    // Pop operator arguments from the stack
+                    Asm_Word arg[MAX_EQU_OPER_ARGS];
+                    int operIdx = Equ_FindOperIdxByType(operType);
+                    if (operIdx != -1)  {
+                        // Fetch operator arity and associativity
+                        int argCount = Equ_OperList[operIdx].oi_argc;
+                        Equ_OperAsoc asoc = Equ_OperList[operIdx].oi_asoc;
+
+                        // Check if stack underflow
+                        if (argCount > wordCount) {
+                            Show_EquError("Invalid expression '%s' (Operator arguments error)", equExpression);
+                            equError = TRUE;
+                        }
+
+                        // Pop operator arguments
+                        if (! equError){
+                            if (asoc == O_ASOC_LTR) {
+                                int i;
+                                for (i = argCount - 1; i >= 0; i--) {
+                                    arg[i] = wordStack[wordCount - 1];
+                                    wordCount -= 1;
+                                }
+                            } else if (asoc == O_ASOC_RTL) {
+                                int i;
+                                for (i = 0; i < argCount; i++) {
+                                    arg[i] = wordStack[wordCount - 1];
+                                    wordCount -= 1;
+                                }
+                            }
+                        }
+                    }
+
+                    if (! equError) {
+                        // Execute operator
+                        switch (operType) {
+                            case O_POS: {
+                                result = arg[0];
+                            } break;
+                            case O_NEG: {
+                                result = -arg[0];
+                            } break;
+                            case O_ADD: {
+                                result = arg[0] + arg[1];
+                            } break;
+                            case O_SUB: {
+                                result = arg[0] - arg[1];
+                            } break;
+                            case O_MUL: {
+                                result = arg[0] * arg[1];
+                            } break;
+                            case O_DIV: {
+                                result = arg[0] / arg[1];
+                            } break;
+                            case O_MOD: {
+                                result = arg[0] % arg[1];
+                            } break;
+                            case O_NOT: {
+                                result = ~ arg[0];
+                            } break;
+                            case O_AND: {
+                                result = arg[0] & arg[1];
+                            } break;
+                            case O_OR: {
+                                result = arg[0] | arg[1];
+                            } break;
+                            case O_XOR: {
+                                result = arg[0] ^ arg[1];
+                            } break;
+                            case O_SHL: {
+                                result = arg[0] << arg[1];
+                            } break;
+                            case O_SHR: {
+                                result = arg[0] >> arg[1];
+                            } break;
+                            default: {
+                                Show_EquError("Invalid expression '%s' (invalid operator %d)", equExpression, operType);
+                                equError = TRUE;
+                            } break;
+                        }
+                        if (! equError) {
+                            // Push result onto the stack
+                            wordStack[wordCount] = result;
+                            wordCount += 1;
+                        }
+                    }
+                } break;
+
+                case EE_VALUE:
+                {
+                    // Push value onto the stack
+                    Asm_Word value = elem.ee_value;
+                    wordStack[wordCount] = value;
+                    wordCount += 1;
+                } break;
+            }
+        }
+
+        if (! equError) {
+            // The stack should contain only one element in the end
+            // which is the result of the execution
+            if (wordCount != 1) {
+                Show_EquError("Invalid expression '%s'. No result produced.", equExpression);
+                equError = TRUE;
+            }
+
+            if (! equError) {
+                // Pop result
+                Asm_Word result = wordStack[wordCount - 1];
+                wordCount -= 1;
+
+                // Add symbol to symbol table
+                Asm_AddAbsSymbol(elf, equSymName, result);
+            }
+        }
+    }
+    // Free memory
+    int i;
+    for (i = 0; i < tokenCount; i++) {
+        if (tokenList[i])
+            free(tokenList[i]);
+    }
+    if (equSymName)
+        free(equSymName);
+    if (equExpression)
+        free(equExpression);
+    return ! equError;
+}
+
 static void show_help() 
 {
     const char *help = 

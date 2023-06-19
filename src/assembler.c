@@ -1494,6 +1494,143 @@ int Asm_AddEquSymbol(Elf_Builder *elf, const char *symName, const char *expressi
     return ! equError;
 }
 
+
+// Add a directive
+int Asm_AddDirective(Elf_Builder *elf, const char *direcName, const char *argsLine)
+{
+    // Find directive information
+    int direcError = FALSE;
+    int idx = Asm_FindDirecIdx(direcName);
+    if (idx == -1) {
+        Show_AsmError("Invalid directive '%s'", direcName);
+        direcError = TRUE;
+    }
+    if (direcError)
+        return 0;
+    Asm_DirecType direcType = Asm_DirecList[idx].d_type;
+
+    // Split directive arguments
+    char *args[MAX_ASM_ARGS] = { 0 };
+    int argCount = Asm_SplitArgs(argsLine, ARR_SIZE(args), args);
+
+    // Parse directive
+    switch (direcType) {
+        // .extern
+        // .global
+        case D_EXTERN:
+        case D_GLOBAL:
+        {
+            int i;
+            for (i = 0; i < argCount; i++) {
+                Elf_Sym *sym = Elf_UseSymbol(elf, args[i]);
+                sym->st_info = ELF_ST_INFO(STB_GLOBAL, ELF_ST_TYPE(sym->st_info));
+            }
+        } break;
+
+        // .section name
+        case D_SECTION:
+        {
+            // .section name
+            if (argCount == 1) {
+                Elf_UseSection(elf, args[0]);
+            } else {
+                Show_AsmError("'%s' directive requires exactly 1 argument", direcName);
+            }
+        } break;
+
+        // .byte
+        // .half
+        // .word
+        case D_BYTE:
+        case D_HALF:
+        case D_WORD:
+        {
+            // .byte lit|sym, ...
+            // .half lit|sym, ...
+            // .word lit|sym, ...
+            int i;
+            for (i = 0; i < argCount; i++) {
+                Asm_OperandType *ao = Asm_ParseBranchOperand(args[i]);
+                if (ao->ao_type == AO_SYM) {
+                    int relaType = 
+                          direcType == D_BYTE ? R_SS_8
+                        : direcType == D_HALF ? R_SS_16
+                        : direcType == D_WORD ? R_SS_32
+                        : R_SS_NONE;
+                    Asm_AddRela(elf, args[i], relaType, 0);
+                    Elf_PushWord(elf, 0);
+                } else if (ao->ao_type == AO_LIT) {
+                    if (direcType == D_WORD) 
+                        Elf_PushWord(elf, ao->ao_lit);
+                    else if (direcType == D_HALF) 
+                        Elf_PushHalf(elf, ao->ao_lit);
+                    else if (direcType == D_BYTE) 
+                        Elf_PushByte(elf, ao->ao_lit);
+                } else if (ao->ao_type == AO_INVALID) {
+                    Show_AsmError("Invalid symbol '%s'", args[i]);
+                }
+                Asm_OperandDestroy(ao);
+            }
+        } break;
+
+        // .skip num
+        case D_SKIP:
+        {
+            if (argCount == 1) {
+                int value = Str_ParseInt(args[0]);
+                Elf_PushSkip(elf, value, 0x00);
+            } else {
+                Show_Error("'%s' directive requires exactly 1 argument", direcName);
+            }
+        } break;
+
+        // .ascii str
+        case D_ASCII:
+        {
+            if (argCount == 1)  {
+                Str_RmQuotes(args[0]);
+                Str_UnescapeStr(args[0]);
+                Elf_PushString(elf, args[0]);
+            } else {
+                Show_Error("'%s' directive requires exactly 2 arguments", direcName);
+            }
+        } break;
+
+        // .equ sym, expr
+        case D_EQU:
+        {
+            if (argCount == 2) {
+                Asm_EquType equ = {
+                    .ei_line = Asm_LineNo,
+                    .ei_sym = strdup(args[0]),
+                    .ei_expr = strdup(args[1])
+                };
+                Asm_EquList[Asm_EquCount] = equ;
+                Asm_EquCount += 1;
+                //const char *symName = args[0];
+                //Asm_Word value = Str_ParseInt(args[1]);
+                //Asm_AddAbsSymbol(elf, symName, value);
+            } else {
+                Show_AsmError("'%s' directive requires exactly 2 arguments", direcName);
+            }
+        } break;
+
+        // .end
+        case D_END:
+        {
+            Asm_CurrentMode = ASM_MODE_QUIT;
+        } break;
+    }
+
+    // Free memory
+    for (int i = 0; i < argCount; i++) {
+        if (args[i])
+            free(args[i]);
+    }
+
+    return ! direcError;
+}
+
 static void show_help() 
 {
     const char *help = 

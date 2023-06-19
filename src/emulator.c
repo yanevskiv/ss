@@ -3,6 +3,7 @@
 #include <assert.h>
 #include <elf.h>
 #include <string.h>
+#include <util.h>
 
 static void show_help(FILE* file) 
 {
@@ -32,10 +33,10 @@ static void show_help(FILE* file)
 #define Asm_Byte  unsigned char
 #define Asm_Short unsigned short
 #define Asm_Word  unsigned int
-#define Asm_Reg   Asm_Word
+#define Asm_Reg   int
 #define Asm_Addr  Asm_Word
 
-Asm_Reg GPR[16] = { 4, 2 };
+Asm_Reg GPR[16] = { 0 };
 Asm_Reg CSR[3]  = { 0 };
 unsigned char *PAGES[VA_PAGE_SIZE] = { 0 };
 
@@ -82,7 +83,7 @@ unsigned int Mem_ReadWord(int addr)
 
 
 // Read bytes
-void Mem_Read(void *data, int startAddr, int size)
+void Mem_ReadBytes(void *data, int startAddr, int size)
 {
     unsigned char *bytes = (unsigned char*)data;
     int i;
@@ -92,7 +93,7 @@ void Mem_Read(void *data, int startAddr, int size)
 }
 
 // Write bytes
-void Mem_Write(void *data, int startAddr, int size)
+void Mem_WriteBytes(void *data, int startAddr, int size)
 {
     unsigned char *bytes = (unsigned char*)data;
     int i;
@@ -110,6 +111,47 @@ void Mem_Clear(void)
             free(PAGES[page]);
             PAGES[page] = NULL;
         }
+    }
+}
+
+// Load sections into memory
+void Mem_LoadElf(Elf_Builder *elf)
+{
+    /* 
+     * Load into memory
+     */
+    Asm_Addr offset = 0;
+    for (int i = 1; i <= Elf_GetSectionCount(elf); i++) {
+        /*
+         * Load section into memory
+         */
+        Elf_PushSection(elf);
+        Elf_SetSection(elf, i);
+        Elf_Shdr *shdr = Elf_GetSection(elf);
+        if (shdr->sh_type != SHT_SYMTAB && shdr->sh_type != SHT_RELA) {
+            Elf_Addr addr = shdr->sh_addr;
+            Elf_Xword size = shdr->sh_size;
+            unsigned char *data = Elf_GetSectionData(elf);
+
+            // If address is zero, push it at the beginning
+            // Otherwise, place it at the desired location
+            if (addr == 0) {
+                Mem_WriteBytes(data, offset, size);
+                offset += size;
+            } else {
+                Mem_WriteBytes(data, addr, size);
+            }
+
+            /*
+             * Rewrite relas
+             */
+            char *relaName = Str_Concat(".rela", Elf_GetSectionName(elf));
+            if (Elf_SectionExists(elf, relaName)) {
+                printf("Rela");
+            }
+            free(relaName);
+        }
+        Elf_PopSection(elf);
     }
 }
 
@@ -171,10 +213,10 @@ enum {
 void Emu_RunElf(Elf_Builder *elf, FILE *output)
 {
     GPR[PC] = 0x40000000;
-    GPR[SP] = 0x8000ffff;
     /*
      * Read elf
      */
+    Mem_LoadElf(elf);
     
     /*
      * Execute emulator
@@ -184,12 +226,13 @@ void Emu_RunElf(Elf_Builder *elf, FILE *output)
         M_STOP
     };
     int mode = M_RUNNING;
+
     while (mode == M_RUNNING)  {
         /*
          * Fetch instruction
          */
         unsigned char bytes[4];
-        Mem_Read(bytes, GPR[PC], ASM_INSTR_SIZE);
+        Mem_ReadBytes(bytes, GPR[PC], ASM_INSTR_SIZE);
         GPR[PC] += ASM_INSTR_SIZE;
         int oc   = (bytes[0] >> 4) & 0xf;
         int mod  = (bytes[0] >> 0) & 0xf;
@@ -197,6 +240,9 @@ void Emu_RunElf(Elf_Builder *elf, FILE *output)
         int rb   = (bytes[1] >> 0) & 0xf;
         int rc   = (bytes[2] >> 4) & 0xf; 
         int disp = (((bytes[2] >> 0) & 0xf) << 8) | bytes[3];
+        if (disp >= (1 << 11))  {
+            disp -= (1 << 12);
+        }
 
         /*
          * Execute instruction
@@ -406,6 +452,35 @@ void Emu_RunElf(Elf_Builder *elf, FILE *output)
 
 
 
+void Asm_PushLoadLiteral(Elf_Builder *elf, int rDest, int value, int rShift, int pushShift)
+{
+
+    #define byte(x, y) (((x) << 4) | ((y) << 0))
+    int d = rDest;
+    int s = rShift;
+    unsigned char code[] = {
+        0x81, byte(0xe, 0xe), byte(s, 0), 0x04,                     // push rShift
+        0x63, byte(s, s),     byte(s, 0), 0x00,                     // rShift = 0x0
+        0x91, byte(s, s),     0x00,       0x08,                     // rShift = 0x8
+        0x63, byte(d, d),     byte(d, 0), 0x00,                     // rDest = 0
+        0x91, byte(d, d),     0x00,       ((value >> 24) & 0xff),   // rDest += 0xff
+        0x70, byte(d, d),     byte(s, 0), 0x00,                     // rDest <<= r1
+        0x91, byte(d, d),     0x00,       ((value >> 16) & 0xff),   // rDest += 0xff
+        0x70, byte(d, d),     byte(s, 0), 0x00,                     // rDest <<= r1
+        0x91, byte(d, d),     0x00,       ((value >> 8) & 0xff),    // rDest += 0xff
+        0x70, byte(d, d),     byte(s, 0), 0x00,                     // rDest <<= r1
+        0x91, byte(d, d),     0x00,       (value & 0xff),           // rDest += 0xff
+        0x63, byte(s, s),     byte(s, 0), 0x00,                     // rShift = 0
+        0x93, byte(s, 0xe),   0xef,       0xfc,                     // pop rShift
+    };
+    if (pushShift) {
+        Elf_PushBytes(elf, code, sizeof(code));
+    } else {
+        Elf_PushBytes(elf, code + 4, sizeof(code) - 8);
+    }
+    #undef byte
+}
+
 int main(int argc, char *argv[]) {
     if (argc != 2)  {
         show_help(stdout);
@@ -415,7 +490,6 @@ int main(int argc, char *argv[]) {
     // Read elf
     FILE *input = NULL;
     const char *input_name = argv[1];
-    Elf_Builder elf;
     if (strcmp(input_name, "-") == 0) {
         input = stdin;
     } else {
@@ -425,14 +499,53 @@ int main(int argc, char *argv[]) {
             return 1;
         }
     }
-    Elf_ReadHexInit(&elf, input);
 
+    // Uncomment the following when done tesitng
+    //Elf_ReadHexInit(&elf, input);
+
+
+    // Testing 
+    int value = 0xcafebabe;
     unsigned char code[] = {
-        0x50, 0x00, 0x10, 0x00,
-        0x90, 0x00, 0x10, 0x00,
-        0x00, 0x00, 0x00, 0x00
+        0x91, 0x12, 0x00, 0x15,                     // r1 = 0x5
+
+        // ld $cafebabe, %r0
+        //0x81, 0xee, 0x10, 0x04,                     // push r1
+        //0x63, 0x11, 0x10, 0x00,                     // r1 = 0x0
+        //0x91, 0x11, 0x00, 0x08,                     // r1 = 0x8
+        //0x63, 0x00, 0x00, 0x00,                     // r0 = 0
+        //0x91, 0x00, 0x00, ((value >> 24) & 0xff),   // r0 += 0xff
+        //0x70, 0x00, 0x10, 0x00,                     // r0 <<= r1
+        //0x91, 0x00, 0x00, ((value >> 16) & 0xff),   // r0 += 0xff
+        //0x70, 0x00, 0x10, 0x00,                     // r0 <<= r1
+        //0x91, 0x00, 0x00, ((value >> 8) & 0xff),    // r0 += 0xff
+        //0x70, 0x00, 0x10, 0x00,                     // r0 <<= r1
+        //0x91, 0x00, 0x00, (value & 0xff),           // r0 += 0xff
+        //0x93, 0x1e, 0xef, 0xfc,                     // pop r1
+
+        // ld $cafebabe, %sp
+
+
+        //0x00, 0x00, 0x00, 0x00,                     // halt
+
     };
-    Mem_Write(code, 0x40000000, sizeof(code));
+
+    Elf_Builder elf;
+    Elf_Init(&elf);
+    Elf_PushSection(&elf);
+    Elf_UseSection(&elf, "fdsa");
+    Elf_Shdr *shdr = Elf_GetSection(&elf);
+    shdr->sh_addr = 0x40000000;
+    Elf_UseSymbol(&elf, Elf_GetSectionName(&elf))->st_value = shdr->sh_addr;
+
+    Elf_PushBytes(&elf, code, sizeof(code));
+
+    Asm_PushLoadLiteral(&elf, 0, value, 1, 0);
+
+    Elf_PopSection(&elf);
+    Elf_WriteDump(&elf, stdout);
+
+    GPR[SP] = 0xffff0000;
     Emu_RunElf(&elf, stdout);
     Mem_Clear();
     return 0;

@@ -1,7 +1,7 @@
 #!/bin/bash
-gcc -c -fdiagnostics-color=always -Iinc src/elf.c -o src/elf.o
 gcc -c -fdiagnostics-color=always -Iinc src/util.c -o src/util.o
+gcc -c -fdiagnostics-color=always -Iinc src/elf.c -o src/elf.o
 gcc -fdiagnostics-color=always -Iinc src/assembler.c src/elf.o src/util.o -o assembler
 gcc -fdiagnostics-color=always -Iinc src/linker.c    src/elf.o src/util.o -o linker
-gcc -fdiagnostics-color=always -Iinc src/emulator.c  src/elf.o -o emulator 
+gcc -fdiagnostics-color=always -Iinc src/emulator.c  src/elf.o src/util.o -o emulator 
 timeout 0.4 ./test/start.sh

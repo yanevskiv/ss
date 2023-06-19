@@ -618,6 +618,7 @@ static void _Elf_PrepareForWriting(Elf_Builder *elf)
     for (i = 1; i <= Elf_GetSectionCount(elf); i++) {
         Elf_PushSection(elf);
         Elf_SetSection(elf, i);
+        Elf_GetSection(elf)->sh_size = Elf_GetBuffer(elf)->eb_size;
         Elf_GetSection(elf)->sh_offset = off;
         off += Elf_GetSection(elf)->sh_size;
         Elf_PopSection(elf);
@@ -631,7 +632,6 @@ static void _Elf_PrepareForWriting(Elf_Builder *elf)
 #define GREEN 32
 #define YELLOW 33
 #define BLUE 34
-
 static size_t _WriteHexBytesColor(void *data, size_t count, size_t index, FILE *output, int color)
 {
     unsigned char *bytes = data;
@@ -717,7 +717,7 @@ void _Elf_Buffer_ReadHexBytes(Elf_Buffer *buffer, FILE *input)
 {
     regex_t re_hexline; // Matches comment
     regex_t re_hexdigit; // Matches comment
-    regmatch_t matches[10];
+    regmatch_t matches[128];
     if (regcomp(&re_hexline, "^([0-9a-fA-F]*:\\s*)(.*)", REG_EXTENDED)) {
         fprintf(stderr, "Error compiling regex for hex lines\n");
         return;
@@ -812,7 +812,7 @@ void Elf_WriteDump(Elf_Builder* elf, FILE* output)
         Elf_SetSection(elf, i);
         Elf_Shdr *shdr = Elf_GetSection(elf);
         unsigned char *data = Elf_GetSectionData(elf);
-        fprintf(output, "#%s\n", Elf_GetSectionName(elf));
+        fprintf(output, "#%s@0x%08x\n", Elf_GetSectionName(elf), shdr->sh_addr);
         switch (shdr->sh_type) {
             case SHT_SYMTAB: {
                 fprintf(output, "Num  Value   Size Type  Bind Ndx Name\n");
@@ -821,7 +821,7 @@ void Elf_WriteDump(Elf_Builder* elf, FILE* output)
                     Elf_Sym *sym = Elf_GetSymbol(elf, i);
                     int type = ELF_ST_TYPE(sym->st_info);
                     int bind = ELF_ST_BIND(sym->st_info);
-                    fprintf(output, "%3d: %08d %3d %5s %4s ", i, 
+                    fprintf(output, "%3d: %08x %3d %5s %4s ", i, 
                         sym->st_value,
                         sym->st_size,
                         type == STT_OBJECT ? "OBJ"

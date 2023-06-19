@@ -272,8 +272,8 @@ static struct Asm_InstrInfo {
     { "beq",   I_BEQ,   0x00, 3, IAT_REG_REG_BOP },
     { "bne",   I_BNE,   0x00, 3, IAT_REG_REG_BOP },
     { "bgt",   I_BGT,   0x00, 3, IAT_REG_REG_BOP },
-    { "push",  I_PUSH,  0x00, 1, IAT_REG },
-    { "pop",   I_POP,   0x00, 1, IAT_REG },
+    { "push",  I_PUSH,  0x81, 1, IAT_REG },
+    { "pop",   I_POP,   0x93, 1, IAT_REG },
     { "xchg",  I_XCHG,  0x40, 2, IAT_REG_REG },
     { "add",   I_ADD,   0x50, 2, IAT_REG_REG },
     { "sub",   I_SUB,   0x51, 2, IAT_REG_REG },
@@ -356,6 +356,7 @@ static int Asm_FindDirecIdx(const char *direct)
     }
     return -1;
 }
+
 
 // Compile assembly into ELF
 void Asm_Compile(Elf_Builder *elf, FILE *input, int flags)
@@ -661,8 +662,8 @@ void Asm_Compile(Elf_Builder *elf, FILE *input, int flags)
              * [ ] beq
              * [ ] bne
              * [ ] bgt
-             * [ ] push
-             * [ ] pop
+             * [x] push
+             * [x] pop
              * [x] xchg
              * [x] add
              * [x] sub
@@ -785,7 +786,17 @@ void Asm_Compile(Elf_Builder *elf, FILE *input, int flags)
 
 
                     case I_PUSH: {
-                        // TODO
+                        Elf_PushByte(elf, opCode);
+                        Elf_PushByte(elf, (ASM_SP_REG << 4));
+                        Elf_PushByte(elf, gprD);
+                        Elf_PushByte(elf, 0x04);
+                    } break;
+
+                    case I_POP: {
+                        Elf_PushByte(elf, opCode);
+                        Elf_PushByte(elf, gprD << 4 | ASM_SP_REG);
+                        Elf_PushByte(elf, 0x0f);
+                        Elf_PushByte(elf, 0xfc);
                     } break;
 
                     case I_LD: {
@@ -794,10 +805,6 @@ void Asm_Compile(Elf_Builder *elf, FILE *input, int flags)
 
                     case I_ST: {
                         // TODO
-                    } break;
-
-                    case I_POP: {
-
                     } break;
 
 
@@ -856,7 +863,7 @@ void Asm_Compile(Elf_Builder *elf, FILE *input, int flags)
 
 int main(int argc, char *argv[])
 {
-    int i = 0;
+    int i;
     FILE *input = NULL;
     FILE *output = NULL;
 
@@ -869,9 +876,9 @@ int main(int argc, char *argv[])
     int flags = 0;
     for (i = 1; i < argc; i++) {
         char *option = argv[i];
-        if (strcmp(option, "-hex") == 0) {
+        if (Str_Equals(option, "-hex")) {
             flags |= F_HEX;
-        } else if (strcmp(option, "-o") == 0) {
+        } else if (Str_Equals(option, "-o")) {
             // Output option (-o)
             if (i + 1 == argc) {
                 fprintf(stderr, "Error: -o Option requires an argument\n");
@@ -879,7 +886,7 @@ int main(int argc, char *argv[])
             }
             char *output_path = argv[i + 1];
             i += 1;
-            if (strcmp(output_path, "-") == 0) {
+            if (Str_Equals(output_path, "-")) {
                 output = stdout;
             } else {
                 output = fopen(output_path, "w");
@@ -894,7 +901,7 @@ int main(int argc, char *argv[])
                 fprintf(stderr, "Warning: Multiple input files set\n");
             } else {
                 char *input_path = option;
-                if (strcmp(input_path, "-") == 0) {
+                if (Str_Equals(input_path, "-")) {
                     input = stdin;
                 } else {
                     input = fopen(input_path, "r");
@@ -907,26 +914,26 @@ int main(int argc, char *argv[])
         }
     }
 
-
-
     /*
      * Check input and output
      */
-    if (input == NULL || output == NULL)
+    if (input == NULL || output == NULL) {
         show_help();
-    Elf_Builder elf;
-    Elf_Init(&elf);
-    Asm_Compile(&elf, input, F_DEBUG);
-
-    // Testing only
-    //Elf_WriteDump(&elf, stdout);
-
-    if (flags | F_HEX)  {
-        Elf_WriteHex(&elf, output);
     } else {
-        Elf_WriteDump(&elf, output);
+        Elf_Builder elf;
+        Elf_Init(&elf);
+        Asm_Compile(&elf, input, F_DEBUG);
+
+        // Testing only
+        //Elf_WriteDump(&elf, stdout);
+
+        if (flags | F_HEX)  {
+            Elf_WriteHex(&elf, output);
+        } else {
+            Elf_WriteDump(&elf, output);
+        }
+        Elf_Destroy(&elf);
     }
-    Elf_Destroy(&elf);
 
     /* Close files */
     if (input != stdin) 

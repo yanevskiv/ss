@@ -35,4 +35,6 @@ void Emu_Dump(Emu *emu);
 void Emu_Destroy(Emu *emu);
 */
 
+
+
 #endif /* _EMULATOR_H_ */ 

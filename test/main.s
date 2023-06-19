@@ -6,6 +6,7 @@
 
 .global value1, value2, value3, value4, value5, value6, value7
 
+
 .section my_code
 
 my_start:

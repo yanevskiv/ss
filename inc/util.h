@@ -33,15 +33,20 @@
 #define TRUE 1
 #define FALSE 0
 
+// String utilities
+char *Str_Create(const char *str);
 char *Str_RmQuotes(char *str);
 int Str_Equals(const char *str1, const char *str2);
 int Str_CheckMatch(const char *str, const char *re);
-char *Str_Concat(char *str1, char *str2);
+char *Str_Concat(const char *str1, const char *str2);
 int Str_RegexMatch(const char *str, const char *re, int match_size, regmatch_t *matches) ;
+int Str_RegexSplit(const char *str, const char *re, int match_size, char **matches) ;
+void Str_RegexClean(int match_size, char **matches);
 char *Str_Substr(const char *str, int from, int to);
 void Str_Cut(char **str, int from, int to);
 void Str_Trim(char *str);
 int Str_ParseInt(const char *str);
+
 
 
 

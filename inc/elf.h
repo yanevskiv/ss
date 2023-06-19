@@ -137,6 +137,7 @@
 #define R_X86_64_16         12  /* Direct 16 bit zero extended */
 #define R_X86_64_PC16       13  /* 16 bit sign extended pc relative */
 #define R_X86_64_8          14  /* Direct 8 bit sign extended  */
+#define R_X86_64_IMM12      15  /* Weird 12 bit thing */
 
 
 /* Type for 8-bit quantity */
@@ -346,7 +347,7 @@ Elf_Rela *Elf_AddRelaSymb(Elf_Builder* buidler, const char *symname);
 Elf_Rela *Elf_GetRela(Elf_Builder* builder, int index);
 int Elf_GetRelaCount(Elf_Builder* builder);
 
-// Linking (TODO)
+// Linking (TESTING)
 void Elf_Link(Elf_Builder* dest, Elf_Builder* src);
 
 Elf_Word Elf_FindString(Elf_Builder* builder, const char *str);

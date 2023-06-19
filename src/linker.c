@@ -77,20 +77,21 @@ int main(int argc, char *argv[])
         return 0;
     } else {
         // Link
-        Elf_Builder elf;
-        Elf_Init(&elf);
-        for (i = 0; i < oCount; i++) {
-            Elf_Link(&elf, &objects[i]);
-        }
+        //Elf_Builder elf;
+        //Elf_Init(&elf);
+        //for (i = 0; i < oCount; i++) {
+        //    Elf_Link(&elf, &objects[i]);
+        //}
 
-        // For testing
-        Elf_WriteDump(&elf, stdout);
-        if (flags & F_HEX)  {
-            Elf_WriteHex(&objects[0], output);
-        } else {
-            Elf_WriteDump(&objects[0], output);
-        }
-        Elf_Destroy(&elf);
+        //// For testing
+        ////Elf_WriteDump(&elf, stdout);
+
+        //if (flags & F_HEX)  {
+        //    Elf_WriteHex(&objects[0], output);
+        //} else {
+        //    Elf_WriteDump(&objects[0], output);
+        //}
+        //Elf_Destroy(&elf);
     }
 
     for (i = 0; i < oCount; i++) 

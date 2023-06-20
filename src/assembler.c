@@ -1631,6 +1631,438 @@ int Asm_AddDirective(Elf_Builder *elf, const char *direcName, const char *argsLi
     return ! direcError;
 }
 
+// Add an instruction
+int Asm_AddInstruction(Elf_Builder *elf, const char *instrName, const char *argsLine)
+{
+    // Find instruction information
+    int instrError = FALSE;
+    int idx = Asm_FindInstrIdx(instrName);
+    if (idx == -1) {
+        Show_AsmError("Invalid instruction '%s'", instrName);
+        instrError = TRUE;
+    }
+    if (instrError)
+        return 0;
+    Asm_InstrType instrType = Asm_InstrList[idx].i_type;
+
+    // Split instruction arguments 
+    char *args[MAX_ASM_ARGS] = { 0 };
+    int argCount = Asm_SplitArgs(argsLine, ARR_SIZE(args), args);
+
+    // Check if the number of arguments given are proper
+    int argNeeded = Asm_InstrList[idx].i_argc;
+    if (argCount != argNeeded) {
+        Show_AsmError("Instruction '%s' requires exactly %d arguments", instrName, argNeeded);
+        instrError = TRUE;
+    }
+
+    
+    // Extract necessary information from the arguments 
+    // depending on the instruction arguments format
+    //   gprS - source register
+    //   gprD - destination register; also used when there is only 1 REG argument.
+    //   csr  - status/handler/cause
+    //   ao   - operand (branch / data)
+    Asm_RegType gprS = NOREG;
+    Asm_RegType gprD = NOREG;
+    Asm_RegType csr  = NOREG;
+    Asm_OperandType *ao = NULL;
+    if (! instrError) {
+        int argsType = Asm_InstrList[idx].i_args_type;
+
+        switch (argsType) {
+            default: {
+                // DO NOTHING
+            } break;
+
+            case I_ARGS_BOP: {
+                ao = Asm_ParseBranchOperand(args[0]);
+                if (ao->ao_type == AO_INVALID) {
+                    instrError = TRUE;
+                }
+            } break;
+
+            case I_ARGS_REG_REG_BOP: {
+                gprS = Asm_ParseRegOperand(args[0]);
+                gprD = Asm_ParseRegOperand(args[1]);
+                ao = Asm_ParseBranchOperand(args[2]);
+                if (gprS == -1 || gprD == -1 || ao->ao_type == AO_INVALID)  {
+                    instrError = TRUE;
+                }
+            } break;
+
+            case I_ARGS_REG_REG: {
+                gprS = Asm_ParseRegOperand(args[0]);
+                gprD = Asm_ParseRegOperand(args[1]);
+                if (gprS == -1 || gprD == -1)  {
+                    instrError = TRUE;
+                }
+            } break;
+
+            case I_ARGS_REG: {
+                gprD = Asm_ParseRegOperand(args[0]);
+                if (gprD == -1)  {
+                    instrError = TRUE;
+                }
+            } break;
+
+            case I_ARGS_DOP_REG: {
+                ao = Asm_ParseDataOperand(args[0]);
+                gprD = Asm_ParseRegOperand(args[1]);
+                if (gprD == -1 || ao->ao_type == AO_INVALID) {
+                    instrError = TRUE;
+                }
+            } break;
+
+            case I_ARGS_REG_DOP: {
+                gprS = Asm_ParseRegOperand(args[0]);
+                ao = Asm_ParseDataOperand(args[1]);
+                if (gprS == -1 || ao->ao_type == AO_INVALID) {
+                    instrError = TRUE;
+                }
+            } break;
+
+            case I_ARGS_CSR_REG: {
+                csr = Asm_ParseCsrOperand(args[0]);
+                gprD = Asm_ParseRegOperand(args[1]);
+                if (csr == -1 || gprD == -1) {
+                    instrError = TRUE;
+                }
+            } break;
+
+            case I_ARGS_REG_CSR: {
+                gprS = Asm_ParseRegOperand(args[0]);
+                csr = Asm_ParseCsrOperand(args[1]);
+                if (csr == -1 || gprS == -1) {
+                    instrError = TRUE;
+                }
+            } break;
+
+            case I_ARGS_DOP: {
+                ao = Asm_ParseDataOperand(args[0]);
+                if (ao->ao_type == AO_INVALID) {
+                    instrError = TRUE;
+                }
+            } break;
+        }
+        if (instrError) {
+            Show_AsmError("Invalid arguments for instruction '%s'", instrName);
+        }
+    }
+
+     // Parse instructions
+     // [x] halt
+     // [x] int
+     // [x] iret
+     // [x] call
+     // [x] ret
+     // [x] jmp
+     // [x] beq
+     // [x] bne
+     // [x] bgt
+     // [x] push
+     // [x] pop
+     // [x] xchg
+     // [x] add
+     // [x] sub
+     // [x] mul
+     // [x] div
+     // [x] not
+     // [x] and 
+     // [x] or
+     // [x] xor
+     // [x] shl
+     // [x] shr
+     // [x] ld
+     // [x] st
+     // [x] csrrd
+     // [x] csrwr
+     // [x] probe
+    if (! instrError) {
+        int opCode = Asm_InstrList[idx].i_op_code;
+        switch (instrType) {
+            // Unknown instruction
+            default: {
+                Show_AsmError("Unknown instruction '%s'", instrName);
+            } break;
+
+            // Halt instruction
+            case I_HALT: {
+                Asm_PushHalt(elf);
+            } break;
+
+            // Software interrupt
+            case I_INT: {
+                Asm_PushInt(elf);
+            } break;
+
+            // Return from interrupt routine
+            case I_IRET: {
+                Asm_PushIret(elf);
+            } break;
+
+            // jmp instruction
+            case I_JMP: {
+                switch (ao->ao_type) {
+                    // jmp lit
+                    case AO_LIT: {
+                        Asm_PushJmpLiteral(elf, ao->ao_lit);
+                    } break;
+
+                    // jmp sym
+                    case AO_SYM: {
+                        Asm_PushJmpSymbol(elf, ao->ao_sym);
+                    } break;
+                } 
+            } break;
+
+            // beq instruction
+            case I_BEQ: {
+                switch (ao->ao_type) {
+                    // beq lit
+                    case AO_LIT: {
+                        Asm_PushBeqLiteral(elf, gprS, gprD, ao->ao_lit);
+                    } break;
+
+                    // beq sym
+                    case AO_SYM: {
+                        Asm_PushBeqSymbol(elf, gprS, gprD, ao->ao_sym);
+                    } break;
+                } 
+            } break;
+
+            // bne instruction
+            case I_BNE: {
+                switch (ao->ao_type) {
+                    // bne lit
+                    case AO_LIT: {
+                        Asm_PushBneLiteral(elf, gprS, gprD, ao->ao_lit);
+                    } break;
+
+                    // bne sym
+                    case AO_SYM: {
+                        Asm_PushBneSymbol(elf, gprS, gprD, ao->ao_sym);
+                    } break;
+                } 
+            } break;
+
+            // bgt instruction
+            case I_BGT: {
+                switch (ao->ao_type) {
+                    // bgt lit
+                    case AO_LIT: {
+                        Asm_PushBgtLiteral(elf, gprS, gprD, ao->ao_lit);
+                    } break;
+
+                    // bgt sym
+                    case AO_SYM: {
+                        Asm_PushBgtSymbol(elf, gprS, gprD, ao->ao_sym);
+                    } break;
+                } 
+            } break;
+
+            // call instruction
+            case I_CALL: {
+                switch (ao->ao_type) {
+                    // call lit
+                    case AO_LIT: {
+                        Asm_PushCallLiteral(elf, ao->ao_lit);
+                    } break;
+
+                    // call sym
+                    case AO_SYM: {
+                        Asm_PushCallSymbol(elf, ao->ao_sym);
+                    } break;
+                } 
+            } break;
+
+
+            // ret
+            case I_RET: {
+                Asm_PushRet(elf);
+            } break;
+
+            // push %gprD
+            case I_PUSH: {
+                Asm_PushStackPush(elf, gprD);
+            } break;
+
+            // pop %gprD
+            case I_POP: {
+                Asm_PushStackPop(elf, gprD);
+            } break;
+
+            // xchg %gprS, %gprD
+            case I_XCHG: {
+                Asm_PushXchg(elf, gprS, gprD);
+            } break;
+
+            // not %gprD
+            case I_NOT: {
+                Asm_PushNot(elf, gprD);
+            } break;
+
+            // ALU instructions
+            // alu %gprS, %gprD
+            case I_ADD:
+            case I_SUB:
+            case I_MUL:
+            case I_DIV:
+            case I_AND:
+            case I_OR:
+            case I_XOR:
+            {
+                Asm_PushALU(elf, opCode, gprS, gprD);
+            } break;
+
+            // Load instruction
+            case I_LD: {
+                switch (ao->ao_type) {
+                    // ld $lit, %gprD
+                    case AO_LIT: {
+                        Asm_PushLoadLiteralValue(elf, ao->ao_lit, gprD);
+                    } break;
+
+                    // ld $sym, %gprD
+                    case AO_SYM: {
+                        Asm_PushLoadSymbolValue(elf, ao->ao_sym, gprD);
+                    } break;
+
+                    // ld lit, %gprD
+                    case AO_MEM_LIT: {
+                        Asm_PushLoadMemLiteralValue(elf, ao->ao_lit, gprD);
+                    } break;
+
+                    // ld sym, %gprD
+                    case AO_MEM_SYM: {
+                        Asm_PushLoadMemSymbolValue(elf, ao->ao_sym, gprD);
+                    } break;
+
+                    // ld %reg, %gprD
+                    case AO_REG: {
+                        Asm_PushLoadReg(elf, ao->ao_reg, gprD);
+                    } break;
+
+                    // ld [%gprS], %gprD
+                    case AO_MEM_REG: {
+                        Asm_PushLoadMemRegDisp(elf, ao->ao_reg, 0, gprD);
+                    } break;
+
+                    // ld [%gprS + lit], %gprD
+                    case AO_MEM_REG_LIT: {
+                        Asm_PushLoadMemRegDisp(elf, ao->ao_reg, ao->ao_lit, gprD);
+                    } break;
+
+                    // ld [%gprS + sym], %gprD
+                    case AO_MEM_REG_SYM: {
+                        Asm_PushLoadMemRegSymbolDisp(elf, ao->ao_reg, ao->ao_sym, gprD);
+                    } break;
+                }
+            } break;
+
+            // Store instruction
+            case I_ST: {
+                switch (ao->ao_type) {
+                    // st %gprS, $lit
+                    case AO_LIT: {
+                        Asm_PushStoreMemAddr(elf, gprS, ao->ao_lit);
+                    } break;
+
+                    // st %gprS, $sym
+                    case AO_SYM: {
+                        Asm_PushStoreSymbolMemAddr(elf, gprS, ao->ao_sym);
+                    } break;
+
+                    // st %gprS, lit
+                    case AO_MEM_LIT: {
+                        Asm_PushStoreAddr(elf, gprS, ao->ao_lit);
+                    } break;
+
+                    // st %gprS, sym
+                    case AO_MEM_SYM: {
+                        Asm_PushStoreSymbolAddr(elf, gprS, ao->ao_sym);
+                    } break;
+
+                    // st %gprS, %gprD
+                    case AO_REG: {
+                        Asm_PushStoreReg(elf, gprS, ao->ao_reg);
+                    } break;
+
+                    // st %gprS, [%gprD]
+                    case AO_MEM_REG: {
+                        Asm_PushStoreMemRegDisp(elf, gprS, ao->ao_reg, 0);
+                    } break;
+
+                    // st %gprS, [%gprD + lit]
+                    case AO_MEM_REG_LIT: {
+                        Asm_PushStoreMemRegDisp(elf, gprS, ao->ao_reg, ao->ao_lit);
+                    } break;
+
+                    // st %gprS, [%gprD + sym]
+                    case AO_MEM_REG_SYM: {
+                        Asm_PushStoreMemRegSymbolDisp(elf, gprS, ao->ao_reg, ao->ao_sym);
+                    } break;
+                }
+            } break;
+
+            case I_PROBE: {
+                switch (ao->ao_type) {
+                    // probe $lit
+                    case AO_MEM_LIT:
+                    case AO_LIT: {
+                        Asm_PushProbeLit(elf, ao->ao_lit);
+                    } break;
+
+                    // probe %reg
+                    case AO_REG: {
+                        Asm_PushProbeReg(elf, ao->ao_reg);
+                    } break;
+
+                    // probe [%reg]
+                    case AO_MEM_REG: {
+                        Asm_PushProbeMemRegDisp(elf, ao->ao_reg, 0);
+                    } break;
+
+                    // probe [%reg + disp]
+                    case AO_MEM_REG_LIT: {
+                        Asm_PushProbeMemRegDisp(elf, ao->ao_reg, ao->ao_lit);
+                    } break;
+
+                    // probe all
+                    case AO_MEM_SYM: {
+                        if (Str_Equals(ao->ao_sym, "all")) {
+                            Asm_PushProbeAll(elf);
+                        } else {
+                            Show_AsmError("Unknown option '%s' for instruction '%s'", ao->ao_sym, instrName);
+                        }
+                    } break;
+                }
+            } break;
+
+            // csrrd %csr, %gprD
+            case I_CSRRD: {
+                Asm_PushCsrrd(elf, csr, gprD);
+            } break;
+
+            // csrwr %gprS, %csr
+            case I_CSRWR: {
+                Asm_PushCsrwr(elf, gprS, csr);
+            } break;
+        }
+    }
+
+    //Free memory
+    if (ao) {
+        Asm_OperandDestroy(ao);
+    }
+    for (int i = 0; i < argCount; i++) {
+        if (args[i])
+            free(args[i]);
+    }
+    
+    return ! instrError;
+}
+
 static void show_help() 
 {
     const char *help = 

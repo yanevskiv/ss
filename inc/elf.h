@@ -118,10 +118,12 @@
 #define STV_HIDDEN 2 /* Sym unavailable in other modules */
 #define STV_PROTECTED 3 /* Not preemptible, not exported */
 
-// Relocation types
+// Relocation
 #define ELF_R_SYM(i) ((i) >> 32)
 #define ELF_R_TYPE(i) ((i) & 0xffffffff)
 #define ELF_R_INFO(sym,type) ((((Elf_Xword) (sym)) << 32) + (type))
+
+// Relocation types (X86_64)
 #define R_X86_64_NONE       0   /* No reloc */
 #define R_X86_64_64         1   /* Direct 64 bit  */
 #define R_X86_64_PC32       2   /* PC relative 32 bit signed */
@@ -137,7 +139,16 @@
 #define R_X86_64_16         12  /* Direct 16 bit zero extended */
 #define R_X86_64_PC16       13  /* 16 bit sign extended pc relative */
 #define R_X86_64_8          14  /* Direct 8 bit sign extended  */
-#define R_X86_64_IMM12      15  /* Weird 12 bit thing */
+
+// Relocation types (SS)
+#define R_SS_NONE 0 /* No reloc */
+#define R_SS_32   1 /* Word */
+#define R_SS_16   2 /* Half */
+#define R_SS_8    3 /* Byte */
+#define R_SS_LD32 4 /* Load word */
+#define R_SS_LD16 5 /* Load half */
+#define R_SS_LD8  6 /* Load byte */
+#define R_SS_D12  7 /* Instruction displacement */
 
 
 /* Type for 8-bit quantity */
@@ -301,7 +312,7 @@ void Elf_Destroy(Elf_Builder* builder);
 void Elf_PushSection(Elf_Builder* builder);
 void Elf_PopSection(Elf_Builder* builder);
 Elf_Shdr *Elf_CreateSection(Elf_Builder* builder, const char *name);
-Elf_Shdr *Elf_SetSection(Elf_Builder* builder, Elf_Word  id);
+Elf_Shdr *Elf_SetSection(Elf_Builder* builder, Elf_Word id);
 Elf_Shdr *Elf_UseSection(Elf_Builder *builder, const char *name);
 const char *Elf_GetSectionName(Elf_Builder* builder);
 Elf_Section Elf_FindSection(Elf_Builder *builder, const char *name);

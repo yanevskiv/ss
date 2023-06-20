@@ -587,6 +587,7 @@ void *Elf_GetSectionEntry(Elf_Builder *elf, Elf_Word at)
 
 static const char *_Elf_GetRelaTypeName(Elf_Word type)
 {
+    /*
     return 
       type == R_X86_64_NONE      ? "R_X86_64_NONE"
     : type == R_X86_64_64        ? "R_X86_64_64"
@@ -603,6 +604,16 @@ static const char *_Elf_GetRelaTypeName(Elf_Word type)
     : type == R_X86_64_16        ? "R_X86_64_16"
     : type == R_X86_64_PC16      ? "R_X86_64_PC16"
     : type == R_X86_64_8         ? "R_X86_64_8"
+    : "R_UNKNOWN";
+    */
+   return 
+      type == R_SS_NONE ? "R_SS_NONE"
+    : type == R_SS_32   ? "R_SS_32"
+    : type == R_SS_16   ? "R_SS_16"
+    : type == R_SS_8    ? "R_SS_8"
+    : type == R_SS_LD32 ? "R_SS_LD32"
+    : type == R_SS_LD16 ? "R_SS_LD16"
+    : type == R_SS_LD8  ? "R_SS_LD8"
     : "R_UNKNOWN";
 }
 
@@ -835,6 +846,8 @@ void Elf_WriteDump(Elf_Builder* elf, FILE* output)
                     );
                     if (sym->st_shndx == SHN_UNDEF) {
                         fprintf(output, "UND");
+                    } else if (sym->st_shndx == SHN_ABS) {
+                        fprintf(output, "ABS");
                     } else {
                         fprintf(output, "%3d", sym->st_shndx);
                     }
@@ -843,13 +856,13 @@ void Elf_WriteDump(Elf_Builder* elf, FILE* output)
                 }
             } break;
             case SHT_RELA: {
-                fprintf(output, "Num Offset         Type          Symbol  Addend\n");
+                fprintf(output, "Num  Offset      Type      Symbol  Addend\n");
                 int i, size = Elf_GetSectionSize(elf) / sizeof(Elf_Rela);
                 for (i = 0; i < size; i++) {
                     Elf_Rela *rela =  Elf_GetSectionEntry(elf, i);
                     Elf_Half type = ELF_R_TYPE(rela->r_info);
                     Elf_Word symndx = ELF_R_SYM(rela->r_info);
-                    fprintf(output, "%3d: %08d %15s %3d(%s) %3d\n", i,
+                    fprintf(output, "%3d: %08d %10s %3d(%s) %4d\n", i,
                         rela->r_offset,
                         _Elf_GetRelaTypeName(type),
                         symndx,

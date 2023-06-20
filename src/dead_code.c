@@ -159,3 +159,185 @@
             } else if (Str_Equals(direc, ".end")) {
             }
 
+
+
+
+
+// Call instruction
+void Asm_PushCall(Elf_Builder *elf, int mod, int ra, int rb, int disp)
+{
+    unsigned char code[] = {
+        PACK(OC_CALL, mod),
+        PACK(ra, rb),
+        PACK(0, (disp >> 8) & 0xf),
+        disp & 0xff
+    };
+    Elf_PushBytes(elf, code, sizeof(code));
+}
+
+void Asm_PushBranch(Elf_Builder *elf, int mod, int ra, int rb, int rc, int disp)
+{
+    unsigned char code[] = {
+        PACK(OC_BRANCH, mod),
+        PACK(ra, rb),
+        PACK(rc, (disp >> 8) & 0xf),
+        disp & 0xff
+    };
+    Elf_PushBytes(elf, code, sizeof(code));
+}
+
+
+
+
+void Test1(Elf_Builder *elf)
+{
+    int value = 0xcafebabe;
+    unsigned char code[] = {
+        0x91, 0x12, 0x00, 0x15,                     // r1 = 0x5
+
+        // ld $cafebabe, %r0
+        //0x81, 0xee, 0x10, 0x04,                     // push r1
+        //0x63, 0x11, 0x10, 0x00,                     // r1 = 0x0
+        //0x91, 0x11, 0x00, 0x08,                     // r1 = 0x8
+        //0x63, 0x00, 0x00, 0x00,                     // r0 = 0
+        //0x91, 0x00, 0x00, ((value >> 24) & 0xff),   // r0 += 0xff
+        //0x70, 0x00, 0x10, 0x00,                     // r0 <<= r1
+        //0x91, 0x00, 0x00, ((value >> 16) & 0xff),   // r0 += 0xff
+        //0x70, 0x00, 0x10, 0x00,                     // r0 <<= r1
+        //0x91, 0x00, 0x00, ((value >> 8) & 0xff),    // r0 += 0xff
+        //0x70, 0x00, 0x10, 0x00,                     // r0 <<= r1
+        //0x91, 0x00, 0x00, (value & 0xff),           // r0 += 0xff
+        //0x93, 0x1e, 0xef, 0xfc,                     // pop r1
+
+        // ld $cafebabe, %sp
+
+
+        //0x00, 0x00, 0x00, 0x00,                     // halt
+
+    };
+
+    Elf_PushSection(elf);
+    Elf_UseSection(elf, ".fdsa");
+    Elf_Shdr *shdr = Elf_GetSection(elf);
+    shdr->sh_addr = 0x40000000;
+    Elf_UseSymbol(elf, Elf_GetSectionName(elf))->st_value = shdr->sh_addr;
+
+    // Add code
+    //Elf_PushBytes(elf, code, sizeof(code));
+
+    // Add more code
+    //Asm_PushLoadByte(elf, 2, 8);
+    //Asm_PushLoadByte(elf, 0, 0xff);
+    //Asm_PushLoadWord(elf, 4, 0xcafebabe, 13, 0);
+    //Asm_PushInstr(elf, OC_SHIFT, MOD_SHIFT_LEFT, 0, 0, 2, 0);
+
+
+    // Create a symbol with some value
+    {
+        Elf_Sym *sym = Elf_UseSymbol(elf, "hi");
+            // sym->st_shndx = Elf_GetCurrentSection(elf);
+        sym->st_shndx = SHN_ABS;
+        sym->st_value = 0xdeadbeef;
+    }
+
+    // Push some random instructions
+    {
+        Asm_PushLoadByte(elf, 3, 0xff);
+        Asm_PushLoadByte(elf, 3, 0xff);
+        Asm_PushLoadByte(elf, 3, 0xff);
+        Asm_PushLoadByte(elf, 3, 0xff);
+        Asm_PushLoadByte(elf, 3, 0xff);
+        Asm_PushLoadByte(elf, 3, 0xff);
+    }
+
+    // Create a new section that will be used for offset in the second rela
+    {
+        Elf_PushSection(elf);
+        Elf_Shdr *shdr = Elf_UseSection(elf, ".data");
+        shdr->sh_addr = 0xcc000000;
+
+        // Push word and add a symbol for it
+        {
+            Elf_Sym * sym = Elf_UseSymbol(elf, "value1");
+            sym->st_shndx = Elf_GetCurrentSection(elf);
+            sym->st_value = Elf_GetSectionSize(elf);
+            sym->st_size = 4;
+            Elf_PushWord(elf, 0x33333333);
+        }
+        {
+            Elf_Sym * sym = Elf_UseSymbol(elf, "value2");
+            sym->st_shndx = Elf_GetCurrentSection(elf);
+            sym->st_value = Elf_GetSectionSize(elf);
+            sym->st_size = 4;
+            Elf_PushWord(elf, 0x44444444);
+        }
+        {
+            Elf_Sym * sym = Elf_UseSymbol(elf, "value3");
+            sym->st_shndx = Elf_GetCurrentSection(elf);
+            sym->st_value = Elf_GetSectionSize(elf);
+            sym->st_size = 4;
+            Elf_PushWord(elf, 0x55555555);
+        }
+
+
+        Elf_PopSection(elf);
+    }
+
+    // Add instruction and rela to the symbol
+    {
+        Elf_Rela *rela = Elf_AddRelaSymb(elf, "hi");
+        rela->r_offset = Elf_GetSectionSize(elf);
+        rela->r_info   = ELF_R_INFO(ELF_R_SYM(rela->r_info), R_SS_LD32);
+        rela->r_addend = 0;
+        Asm_PushLoadWord(elf, 5, 0xeeeeeeee, 13, 0);
+    }
+
+    {
+        Elf_Rela *rela = Elf_AddRelaSymb(elf, "value3");
+        rela->r_offset = Elf_GetSectionSize(elf);
+        rela->r_info   = ELF_R_INFO(ELF_R_SYM(rela->r_info), R_SS_LD32);
+        rela->r_addend = 0;
+        Asm_PushLoadWord(elf, 4, 0, 13, 0);
+    }
+    Elf_PopSection(elf);
+}
+
+void Test2(Elf_Builder *elf)
+{
+    // my_handler
+    {
+        Elf_PushSection(elf);
+        // This is how you open a function
+        Elf_Shdr *shdr = Elf_UseSection(elf, "my_handler");
+        shdr->sh_addr = 0xff00ff00;;
+        // This is how you add a label
+        Elf_Sym *sym_handler = Elf_UseSymbol(elf, "handler");
+        sym_handler->st_shndx = Elf_GetCurrentSection(elf);
+        sym_handler->st_value = Elf_GetSectionSize(elf);
+
+
+        // push %r1
+        Asm_PushStackPush(elf, 1);
+
+        Elf_PopSection(elf);
+    }
+
+    // my_code
+    {
+        Elf_PushSection(elf);
+        Elf_Shdr *shdr = Elf_UseSection(elf, "my_start");
+        shdr->sh_addr = 0x40000000;
+
+        Asm_PushLoadWord(elf, 14, 0xfffffefe, 13, 0);
+        Asm_PushLoadWord(elf, 0, 0xdadadede, 13, 0);
+        Asm_PushStackPush(elf, 0);
+        Asm_PushLoadByte(elf, 0, 0xff);
+        Asm_PushStackPop(elf, 0);
+        //Asm_PushInstr(elf, OC_XCHG, MOD_NONE, 0, 12, SP, 0);
+
+
+        Elf_PopSection(elf);
+    }
+}
+
+

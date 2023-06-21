@@ -2063,6 +2063,113 @@ int Asm_AddInstruction(Elf_Builder *elf, const char *instrName, const char *args
     return ! instrError;
 }
 
+// Compile assembly into ELF
+void Asm_Compile(Elf_Builder *elf, FILE *input, int flags)
+{
+    int nread = 0;
+    regmatch_t rm[MAX_REGEX_MATCHES];
+
+    // Prepare variables
+    Asm_Line = NULL;
+    Asm_LineNo = 0;
+    Asm_LineCap = 0;
+    Asm_EquCount = 0;
+    Asm_CurrentMode = ASM_MODE_RUNNING;
+
+    // Start assembling
+    while (Asm_CurrentMode != ASM_MODE_QUIT && (nread = getline(&Asm_Line, &Asm_LineCap, input)) != -1) {
+        //  Read line
+        Asm_LineNo += 1;
+        Asm_Line[strlen(Asm_Line) - 1] = '\0';
+        char *label = NULL; // Label
+        char *instr = NULL; // Instruction
+        char *direc = NULL; // Directive
+        char *other = NULL; // Arguments
+
+        // Duplicate line so that we may cut it
+        char *linebuf = strdup(Asm_Line);
+
+        do {
+            // Skip comments and empty lines
+            if (Str_CheckMatch(Asm_Line, X_EMPTY_LINE))
+                continue;
+            if (Str_CheckMatch(Asm_Line, X_COMMENT_LINE))
+                continue;
+
+            // Extract label
+            if (Str_RegexMatch(linebuf, X_EXTRACT_LABEL, ARR_SIZE(rm), rm))  {
+                // Extract label
+                label = Str_Substr(linebuf, rm[1].rm_so, rm[1].rm_eo);
+                other = Str_Substr(linebuf, rm[2].rm_so, rm[2].rm_eo);
+
+                // Cut out label from the line
+                Str_Cut(&linebuf, rm[1].rm_so, rm[1].rm_eo);
+            }
+
+            // Handle label
+            if (label) {
+                // Equivalent to `Asm_AddLabel()` with checks to whether the symbol already exists
+                Elf_Sym *sym = Elf_UseSymbol(elf, label);
+                if (sym->st_shndx == SHN_UNDEF)  {
+                    sym->st_value = Elf_GetSectionSize(elf);
+                    sym->st_shndx = Elf_GetCurrentSection(elf);
+                } else if (sym->st_value != Elf_GetSectionSize(elf)) {
+                   Show_AsmError("Multiple symbol definitions with name '%s'", label);
+                }
+            }
+
+            // Handle instructions and directives
+            if (Str_RegexMatch(linebuf, X_EXTRACT_DIREC, ARR_SIZE(rm), rm)) {
+                // Handle directive
+                direc = Str_Substr(linebuf, rm[1].rm_so, rm[1].rm_eo);
+                other = Str_Substr(linebuf, rm[2].rm_so, rm[2].rm_eo);
+                Asm_AddDirective(elf, direc, other);
+            } else if (Str_RegexMatch(linebuf, X_EXTRACT_INSTR, ARR_SIZE(rm), rm)) {
+                // Handle instruction
+                instr = Str_Substr(linebuf, rm[1].rm_so, rm[1].rm_eo);
+                other = Str_Substr(linebuf, rm[2].rm_so, rm[2].rm_eo);
+                Asm_AddInstruction(elf, instr, other);
+            }
+        } while (0);
+
+        // Free memory
+        if (linebuf)
+            free(linebuf);
+        if (label)
+            free(label);
+        if (direc)
+            free(direc);
+        if (instr)
+            free(instr);
+        if (other) 
+            free(other);
+    }
+
+    // Parse Equ expressions
+    int idx;
+    for (idx = 0; idx < Asm_EquCount; idx++) {
+        // Fetch equ
+        Asm_EquType equ = Asm_EquList[idx];
+        Asm_AddEquSymbol(elf, equ.ei_sym, equ.ei_expr);
+    }
+
+    // Free memory
+    for (idx = 0; idx < Asm_EquCount; idx++) {
+        Asm_EquType equ = Asm_EquList[idx];
+        if (equ.ei_sym)
+            free(equ.ei_sym);
+        if (equ.ei_expr)
+            free(equ.ei_expr);
+    }
+    if (Asm_Line) {
+        free(Asm_Line);
+        Asm_Line = NULL;
+    }
+
+    // Finish
+    Asm_CurrentMode = ASM_MODE_DONE;
+}
+
 static void show_help() 
 {
     const char *help = 

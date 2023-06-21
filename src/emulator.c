@@ -78,6 +78,28 @@ volatile int Emu_TimConfig = 0;
 // Last character read from the terminal
 volatile Asm_Word Emu_TermBuffer = '\0';
 
+// Check whether an address points to a memory mapped register
+int Mem_IsMemoryMapped(Elf_Addr addr)
+{
+    return MPR_Callback != NULL && (addr >= MPR_Addr[MPR_START_ADDR] && addr <= MPR_Addr[MPR_END_ADDR]);
+}
+
+// Initialize memory mapped segment
+void Mem_InitMemoryMap(MPR_CallbackType callback, Asm_Addr start, Asm_Addr end)
+{
+    MPR_Addr[MPR_START_ADDR] = start;
+    MPR_Addr[MPR_END_ADDR] = end;
+    MPR_Callback = callback;
+}
+
+// Disable memory mapping
+void Mem_ResetMemoryMap()
+{
+    MPR_Addr[MPR_START_ADDR] = 0x0;
+    MPR_Addr[MPR_END_ADDR] = 0x0;
+    MPR_Callback = NULL;
+}
+
 static void show_help(FILE* file) 
 {
     const char *help_text = 

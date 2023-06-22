@@ -404,6 +404,35 @@ void Emu_StopTimer()
     MODES[THR_TIMER] = MODE_STOP;
 }
 
+// Stop terminal
+void Emu_StopTerminal()
+{
+    MODES[THR_TERMINAL] = MODE_STOP;
+}
+
+// Check whether thread is still in runing mode
+int Emu_IsRunning(Emu_ThreadType thr)
+{
+    return MODES[thr] == MODE_RUNNING;
+}
+
+// Timer thread callback
+void *Emu_TimerCallback(void *data)
+{
+    while (Emu_IsRunning(THR_TIMER)) {
+        if (Emu_TimConfig >= 0 && Emu_TimConfig < ARR_SIZE(Emu_TimConfigMap)) {
+            usleep(Emu_TimConfigMap[Emu_TimConfig]);
+        } else {
+            usleep(500 * 1000);
+        }
+
+        Emu_MutexLock();
+        INT[INT_TIMER] = 1;
+        Emu_MutexUnlock();
+    }
+    return NULL;
+}
+
 static void show_help(FILE* file) 
 {
     const char *help_text = 

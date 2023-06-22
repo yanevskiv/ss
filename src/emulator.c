@@ -158,6 +158,38 @@ Asm_Half Mem_ReadRawHalf(Asm_Addr addr)
     ;
 }
 
+// Read raw word
+Asm_Word Mem_ReadRawWord(Asm_Addr addr)
+{
+    return 
+          Mem_ReadRawByte(addr + 0) << 0
+        | Mem_ReadRawByte(addr + 1) << 8
+        | Mem_ReadRawByte(addr + 2) << 16
+        | Mem_ReadRawByte(addr + 3) << 24
+    ;
+}
+
+// Read raw bytes
+void Mem_ReadRawBytes(void *data, Asm_Addr startAddr, int size)
+{
+    unsigned char *bytes = (unsigned char*)data;
+    int i;
+    for (i = 0; i < size; i++) {
+        bytes[i] = Mem_ReadRawByte(startAddr + i);
+    }
+}
+
+
+// Write byte
+void Mem_WriteByte(Asm_Addr addr, Asm_Byte value)
+{
+    if (Mem_IsMemoryMapped(addr)) {
+        MPR_Callback(MPR_WRITE, addr, value, NULL);
+    } else {
+        Mem_WriteRawByte(addr, value);
+    }
+}
+
 static void show_help(FILE* file) 
 {
     const char *help_text = 

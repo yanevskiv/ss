@@ -433,6 +433,59 @@ void *Emu_TimerCallback(void *data)
     return NULL;
 }
 
+
+// Terminal thread callback
+void *Emu_TerminalCallback(void *data)
+{
+    struct termios old_attributes, new_attributes;
+
+    // Save the current terminal attributes
+    tcgetattr(STDIN_FILENO, &old_attributes);
+    new_attributes = old_attributes;
+
+    // Disable canonical mode and echo
+    new_attributes.c_lflag &= ~(ICANON | ECHO);
+
+    // Set the new terminal attributes
+    tcsetattr(STDIN_FILENO, TCSANOW, &new_attributes);
+
+    int ch;
+    while (Emu_IsRunning(THR_TERMINAL)) {
+        if (read(STDIN_FILENO, &ch, 1) == 1) {
+            Emu_TermBuffer = ch;
+            // Exit the loop if the pressed character is 'q'
+            if (ch == '`') {
+                Emu_PrintRegs(stdout);
+                fflush(stdout);
+            } else if (ch == '\e') {
+                Emu_StopEmulation();
+                break;
+            } else {
+                Emu_MutexLock();
+                INT[INT_TERMINAL] = 1;
+                Emu_MutexUnlock();
+            }
+        }
+    }
+
+    // Restore the original terminal attributes
+    tcsetattr(STDIN_FILENO, TCSANOW, &old_attributes);
+    return NULL;
+}
+
+// Start timer
+void Emu_StartEmulation() 
+{
+    MODES[THR_EMULATOR] = MODE_RUNNING;
+}
+
+// Start timer
+void Emu_StartTimer() 
+{
+    MODES[THR_TIMER] = MODE_RUNNING;
+    pthread_create(&Emu_TimerThread, NULL, Emu_TimerCallback, NULL);
+}
+
 static void show_help(FILE* file) 
 {
     const char *help_text = 

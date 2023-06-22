@@ -128,6 +128,36 @@ void Mem_WriteRawWord(Asm_Addr addr, Asm_Word value)
     Mem_WriteRawByte(addr + 3, (value >> 24) & 0xff);
 }
 
+// Write raw bytes
+void Mem_WriteRawBytes(void *data, Asm_Addr startAddr, int size)
+{
+    unsigned char *bytes = (unsigned char*)data;
+    int i;
+    for (i = 0; i < size; i++) {
+        Mem_WriteRawByte(startAddr + i, bytes[i]);
+    }
+}
+
+// Read raw byte
+Asm_Byte Mem_ReadRawByte(Asm_Addr addr)
+{
+    int page = VA_PAGE(addr);
+    int word = VA_WORD(addr);
+    if (PAGES[page] == NULL) {
+        return 0;
+    }
+    return PAGES[page][word];
+}
+
+// Read raw half
+Asm_Half Mem_ReadRawHalf(Asm_Addr addr)
+{
+    return 
+          Mem_ReadRawByte(addr + 0) << 0
+        | Mem_ReadRawByte(addr + 1) << 8
+    ;
+}
+
 static void show_help(FILE* file) 
 {
     const char *help_text = 

@@ -386,6 +386,24 @@ void Emu_MutexUnlock(void)
     pthread_mutex_unlock(&Emu_ThreadMutex);
 }
 
+// Destroy mutex
+void Emu_MutexDestroy(void)
+{
+    pthread_mutex_destroy(&Emu_ThreadMutex);
+}
+
+// Stop emulation
+void Emu_StopEmulation()
+{
+    MODES[THR_EMULATOR] = MODE_STOP;
+}
+
+// Stop timer
+void Emu_StopTimer()
+{
+    MODES[THR_TIMER] = MODE_STOP;
+}
+
 static void show_help(FILE* file) 
 {
     const char *help_text = 

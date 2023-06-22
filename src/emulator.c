@@ -190,6 +190,33 @@ void Mem_WriteByte(Asm_Addr addr, Asm_Byte value)
     }
 }
 
+// Write half
+void Mem_WriteHalf(Asm_Addr addr, Asm_Half value)
+{
+    if (Mem_IsMemoryMapped(addr)) {
+        MPR_Callback(MPR_WRITE, addr, value, NULL);
+    } else {
+        Mem_WriteRawHalf(addr, value);
+
+    }
+}
+
+// Write word
+void Mem_WriteWord(Asm_Addr addr, Asm_Word value)
+{
+    if (Mem_IsMemoryMapped(addr)) {
+        MPR_Callback(MPR_WRITE, addr, value, NULL);
+    } else {
+        Mem_WriteRawWord(addr, value);
+    }
+}
+
+// Write bytes
+void Mem_WriteBytes(void *data, Asm_Addr startAddr, int size)
+{
+    Mem_WriteRawBytes(data, startAddr, size);
+}
+
 static void show_help(FILE* file) 
 {
     const char *help_text = 

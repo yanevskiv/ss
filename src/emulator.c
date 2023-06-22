@@ -100,6 +100,34 @@ void Mem_ResetMemoryMap()
     MPR_Callback = NULL;
 }
 
+// Write raw byte
+void Mem_WriteRawByte(Asm_Addr addr, Asm_Byte value)
+{
+    int page = VA_PAGE(addr);
+    int word = VA_WORD(addr);
+    if (PAGES[page] == NULL) {
+        PAGES[page] = malloc(VA_PAGE_SIZE);
+        assert(PAGES[page] != NULL);
+    }
+    PAGES[page][word] = value & 0xff;
+}
+
+// Write raw half
+void Mem_WriteRawHalf(Asm_Addr addr, Asm_Half value)
+{
+    Mem_WriteRawByte(addr + 0, (value >> 0)  & 0xff);
+    Mem_WriteRawByte(addr + 1, (value >> 8)  & 0xff);
+}
+
+// Write raw word
+void Mem_WriteRawWord(Asm_Addr addr, Asm_Word value)
+{
+    Mem_WriteRawByte(addr + 0, (value >> 0)  & 0xff);
+    Mem_WriteRawByte(addr + 1, (value >> 8)  & 0xff);
+    Mem_WriteRawByte(addr + 2, (value >> 16) & 0xff);
+    Mem_WriteRawByte(addr + 3, (value >> 24) & 0xff);
+}
+
 static void show_help(FILE* file) 
 {
     const char *help_text = 

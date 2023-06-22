@@ -368,6 +368,24 @@ void Mem_LoadElf(Elf_Builder *elf)
     }
 }
 
+// Create mutex
+void Emu_MutexInit(void)
+{
+    pthread_mutex_init(&Emu_ThreadMutex, NULL);
+}
+
+// Lock mutex
+void Emu_MutexLock(void)
+{
+    pthread_mutex_lock(&Emu_ThreadMutex);
+}
+
+// Unlock mutex
+void Emu_MutexUnlock(void)
+{
+    pthread_mutex_unlock(&Emu_ThreadMutex);
+}
+
 static void show_help(FILE* file) 
 {
     const char *help_text = 

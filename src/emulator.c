@@ -505,6 +505,224 @@ void Emu_JoinTerminal()
     pthread_join(Emu_TerminalThread, NULL);
 }
 
+// Memory mapping callback
+void Emu_MemoryMapCallback(MPR_Event event, Asm_Addr addr, Asm_Word value, Asm_Word *writeBack)
+{
+    switch (addr) {
+        case EMU_TERM_OUT: {
+            if (event == MPR_WRITE) {
+                fprintf(stdout, "%c", (char) value);
+                fflush(stdout);
+            }
+        } break;
+
+        case EMU_TERM_IN: {
+            if (event == MPR_READ) {
+                *writeBack = Emu_TermBuffer;
+            }
+        } break;
+
+        case EMU_TIM_CFG: {
+            if (event == MPR_WRITE) {
+                if (value >= 0 && value < ARR_SIZE(Emu_TimConfigMap)) {
+                    Emu_TimConfig = value;
+                }
+            } else if (event == MPR_READ) {
+                *writeBack = Emu_TimConfig;
+            }
+        } break;
+    }
+}
+
+// Print some information about an instruction 
+void Emu_DebugInstr(FILE *output, Asm_OcType oc, Asm_ModType mod, Asm_RegType ra, Asm_RegType rb, Asm_RegType rc, Asm_DispType disp)
+{
+    switch (PACK(oc, mod)) {
+        // Halt
+        case PACK(OC_HALT, 0x0): {
+            fprintf(output, "halt");
+        } break;
+
+        // Software interrupt
+        case PACK(OC_INT, 0x0): {
+            fprintf(output, "int");
+        } break;
+        
+        // Call reg
+        case PACK(OC_CALL, MOD_CALL_REG): {
+            fprintf(output, "call [GPR[r%02d] + GPR[r%02d] + %d]", ra, rb, disp);
+        } break;
+
+        // Call mem
+        case PACK(OC_CALL, MOD_CALL_MEM): {
+            fprintf(output, "call mem32[GPR[r%02d] + GPR[r%02d] + %d]", ra, rb, disp);
+        } break;
+
+        // Jmp
+        case PACK(OC_BRANCH, MOD_BRANCH_0): {
+            fprintf(output, "branch pc <= GPR[r%02d] + %d", ra, disp);
+        } break;
+
+        // Beq
+        case PACK(OC_BRANCH, MOD_BRANCH_1): {
+            fprintf(output, "branch if (GPR[r%02d] == GPR[r%02d]) pc <= GPR[r%02d] + %d", rb, rc, ra, disp);
+        } break;
+
+        // Bne
+        case PACK(OC_BRANCH, MOD_BRANCH_2): {
+            fprintf(output, "branch if (GPR[r%02d] != GPR[r%02d]) pc <= GPR[r%02d] + %d", rb, rc, ra, disp);
+        } break;
+
+        // Bgt
+        case PACK(OC_BRANCH, MOD_BRANCH_3): {
+            fprintf(output, "branch if (GPR[r%02d] > GPR[r%02d]) pc <= GPR[r%02d] + %d", rb, rc, ra, disp);
+        } break;
+
+        // Jmp mem32
+        case PACK(OC_BRANCH, MOD_BRANCH_4): {
+            fprintf(output, "branch pc <= mem32[GPR[r%02d] + %d]", ra, disp);
+        } break;
+
+        // Beq mem32
+        case PACK(OC_BRANCH, MOD_BRANCH_5): {
+            fprintf(output, "branch if (GPR[r%02d] == GPR[r%02d]) pc <= mem32[GPR[r%02d] + %d]", rb, rc, ra, disp);
+        } break;
+
+        // Bne mem32
+        case PACK(OC_BRANCH, MOD_BRANCH_6): {
+            fprintf(output, "branch if (GPR[r%02d] != GPR[r%02d]) pc <= mem32[GPR[r%02d] + %d]", rb, rc, ra, disp);
+        } break;
+
+        // Bgt mem32
+        case PACK(OC_BRANCH, MOD_BRANCH_7): {
+            fprintf(output, "branch if (GPR[r%02d] > GPR[r%02d]) pc <= mem32[GPR[r%02d] + %d]", rb, rc, ra, disp);
+        } break;
+
+        // Xchg
+        case PACK(OC_XCHG, 0x0): {
+            fprintf(output, "xchg GPR[r%02d], GPR[r%02d]", rb, rc);
+        } break;
+
+        // Add
+        case PACK(OC_ARITH, MOD_ARITH_ADD): {
+            fprintf(output, "add GPR[r%02d] <= GPR[r%02d] + GPR[r%02d]", ra, rb, rc);
+        } break;
+
+        // Sub
+        case PACK(OC_ARITH, MOD_ARITH_SUB): {
+            fprintf(output, "sub GPR[r%02d] <= GPR[r%02d] - GPR[r%02d]", ra, rb, rc);
+        } break;
+
+        // Mul
+        case PACK(OC_ARITH, MOD_ARITH_MUL): {
+            fprintf(output, "mul GPR[r%02d] <= GPR[r%02d] * GPR[r%02d]", ra, rb, rc);
+        } break;
+
+        // Div
+        case PACK(OC_ARITH, MOD_ARITH_DIV): {
+            fprintf(output, "div GPR[r%02d] <= GPR[r%02d] / GPR[r%02d]", ra, rb, rc);
+        } break;
+
+        // Not
+        case PACK(OC_LOGIC, MOD_LOGIC_NOT): {
+            fprintf(output, "not GPR[r%02d] <= ~GPR[r%02d]", ra, rb);
+        } break;
+
+        // And
+        case PACK(OC_LOGIC, MOD_LOGIC_AND): {
+            fprintf(output, "and GPR[r%02d] <= GPR[r%02d] & GPR[r%02d]", ra, rb, rc);
+        } break;
+
+        // Or
+        case PACK(OC_LOGIC, MOD_LOGIC_OR): {
+            fprintf(output, "or GPR[r%02d] <= GPR[r%02d] | GPR[r%02d]", ra, rb, rc);
+        } break;
+
+        // Xor
+        case PACK(OC_LOGIC, MOD_LOGIC_XOR): {
+            fprintf(output, "xor GPR[r%02d] <= GPR[r%02d] ^ GPR[r%02d]", ra, rb, rc);
+        } break;
+
+        // Shl
+        case PACK(OC_SHIFT, MOD_SHIFT_LEFT): {
+            fprintf(output, "shl GPR[r%02d] <= GPR[r%02d] << GPR[r%02d]", ra, rb, rc);
+        } break;
+
+        // Shr
+        case PACK(OC_SHIFT, MOD_SHIFT_RIGHT): {
+            fprintf(output, "xor GPR[r%02d] <= GPR[r%02d] >> GPR[r%02d]", ra, rb, rc);
+        } break;
+
+        // St 0
+        case PACK(OC_STORE, MOD_STORE_0): {
+            fprintf(output, "st  mem32[GPR[r%02d] + GPR[r%02d] + %d] <= GPR[r%02d]", ra, rb, disp, rc);
+        } break;
+
+        // St 1
+        case PACK(OC_STORE, MOD_STORE_1): {
+            fprintf(output, "st  mem32[mem32[GPR[r%02d] + GPR[r%02d] + %d]] <= GPR[r%02d]", ra, rb, disp, rc);
+        } break;
+
+        // St 2
+        case PACK(OC_STORE, MOD_STORE_2): {
+            fprintf(output, "st  GPR[r%02d] <= GPR[r%02d] + %d; mem32[GPR[r%02d]] <= GPR[r%02d]", ra, ra, disp, ra, rc);
+        } break;
+
+        // Ld 0
+        case PACK(OC_LOAD, MOD_LOAD_0): {
+            fprintf(output, "ld  GPR[r%02d] <= CSR[s%02d]", ra, rb);
+        } break;
+
+        // Ld 1
+        case PACK(OC_LOAD, MOD_LOAD_1): {
+            fprintf(output, "ld  GPR[r%02d] <= GPR[r%02d] + %d", ra, rb, disp);
+        } break;
+
+        // Ld 2
+        case PACK(OC_LOAD, MOD_LOAD_2): {
+            fprintf(output, "ld  GPR[r%02d] <= mem32[GPR[r%02d] + GPR[r%02d] + %d]", ra, rb, rc, disp);
+        } break;
+
+        // Ld 3
+        case PACK(OC_LOAD, MOD_LOAD_3): {
+            fprintf(output, "ld  GPR[r%02d] <= mem32[GPR[r%02d]]; GPR[r%02d] <= GPR[r%02d] + %d", ra, rb, rb, rb, disp);
+        } break;
+
+        // Ld 4
+        case PACK(OC_LOAD, MOD_LOAD_4): {
+            fprintf(output, "ld  CSR[r%02d] <= GPR[s%02d]", ra, rb);
+        } break;
+
+        // Ld 5
+        case PACK(OC_LOAD, MOD_LOAD_5): {
+            fprintf(output, "ld  CSR[r%02d] <= CSR[r%02d] | %d", ra, rb, disp);
+        } break;
+
+        // Ld 6
+        case PACK(OC_LOAD, MOD_LOAD_6): {
+            fprintf(output, "ld  CSR[r%02d] <= mem32[GPR[r%02d] + GPR[r%02d] + %d]", ra, rb, rc, disp);
+        } break;
+
+        // Ld 7
+        case PACK(OC_LOAD, MOD_LOAD_7): {
+            fprintf(output, "ld  CSR[r%02d] <= mem32[GPR[r%02d]]; GPR[r%02d] <= GPR[r%02d] + %d", ra, rb, rb, rb, disp);
+        } break;
+
+        default: {
+            fprintf(output, "?");
+        } break;
+    }
+
+    //// Print information about registers (disabled)
+    //fprintf(output, "(GPR[ra=%d]=%08x GPR[rb=%d]=%08x GPR[rc=%d] disp=%d)",
+    //    ra, GPR[ra],
+    //    rb, GPR[rb],
+    //    rc, GPR[rc],
+    //    disp
+    //);
+    fprintf(output, "\n");
+}
+
 static void show_help(FILE* file) 
 {
     const char *help_text = 

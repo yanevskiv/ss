@@ -486,6 +486,25 @@ void Emu_StartTimer()
     pthread_create(&Emu_TimerThread, NULL, Emu_TimerCallback, NULL);
 }
 
+// Start terminal
+void Emu_StartTerminal()
+{
+    MODES[THR_TERMINAL] = MODE_RUNNING;
+    pthread_create(&Emu_TerminalThread, NULL, Emu_TerminalCallback, NULL);
+}
+
+// Join timer
+void Emu_JoinTimer()
+{
+    pthread_join(Emu_TimerThread, NULL);
+}
+
+// Join terminal
+void Emu_JoinTerminal()
+{
+    pthread_join(Emu_TerminalThread, NULL);
+}
+
 static void show_help(FILE* file) 
 {
     const char *help_text = 

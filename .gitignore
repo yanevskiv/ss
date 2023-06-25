@@ -1,3 +1,8 @@
+*.o
+*/.o
+*/*.o
+*/*/*.o
+*.hex
 /dist/
 /src/*.o
 /test/*.o
@@ -5,3 +10,4 @@
 assembler
 linker
 emulator
+

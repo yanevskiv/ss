@@ -192,7 +192,7 @@ int Str_RegexMatch(const char *str, const char *re, int match_size, regmatch_t *
 {
     regex_t regex; 
     if (regcomp(&regex, re, REG_EXTENDED))  {
-        fprintf(stderr, "Error (Assembler): Failed to compile regex '%s'\n", re);
+        fprintf(stderr, "Error: Failed to compile regex '%s'\n", re);
         return 0;
     }
     int result = 0;
@@ -207,7 +207,7 @@ int Str_RegexExtract(const char *str, const char *re, int size, char **matches)
 {
     regex_t regex;
     if (regcomp(&regex, re, REG_EXTENDED))  {
-        fprintf(stderr, "Error (Assembler): Failed to compile regex '%s'\n", re);
+        fprintf(stderr, "Error: Failed to compile regex '%s'\n", re);
         return 0;
     }
     int i, count = 0;
@@ -226,11 +226,6 @@ int Str_RegexExtract(const char *str, const char *re, int size, char **matches)
     }
     regfree(&regex);
     return count;
-}
-
-int Str_ArrayLength(const char **strarr)
-{
-
 }
 
 int Str_CheckMatch(const char *str, const char *re)
@@ -310,7 +305,7 @@ void Str_Trim(char *str)
     str[i] = '\0';
 }
 
-int Str_RegexSplit(const char *str, const char *re, int count, char **matches)
+int Str_RegexMatchStr(const char *str, const char *re, int count, char **matches)
 {
     regmatch_t *regMatches = (regmatch_t*)calloc(count, sizeof(regmatch_t));
     assert(regMatches != NULL);
@@ -340,4 +335,90 @@ void Str_RegexClean(int count, char **matches)
             matches[i] = NULL;
         }
     }
+}
+
+void Str_Destroy(char *str)
+{
+    free(str);
+}
+
+char Str_UnescapeChar(const char *str)
+{
+    if (str[0] == '\\') {
+        switch (str[1]) {
+            case '\0': { return '\0'; } break;
+            case '0': { return '\0'; } break;
+            case '\\': { return '\\'; } break;
+            case 'e': { return '\e'; } break;
+            case 'n': { return '\n'; } break;
+            case 'r': { return '\r'; } break;
+            case 'a': { return '\a'; } break;
+            case 't': { return '\t'; } break;
+            case '"': { return '"'; } break;
+            case '\'': { return '\''; } break;
+        }
+    }
+    return str[0];
+}
+
+void Str_UnescapeStr(char *str)
+{
+    char *iter = str;
+    char *dest = str;
+    while (*iter) {
+        if (*iter == '\\') {
+            *dest = Str_UnescapeChar(iter);
+            iter += 1;
+        } else {
+            *dest = *iter;
+        }
+        iter += 1;
+        dest += 1;
+    }
+    *dest = '\0';
+}
+
+int Str_RegexSplit(const char *str, const char *re, int maxSplit, char **split)
+{
+    int count = 0;
+    regmatch_t rm[2];
+    int start = 0;
+    int length = strlen(str);
+
+    Str_RegexClean(maxSplit, split);
+    while (count < maxSplit && Str_RegexMatch(str + start, re, 2, rm)) {
+        int so = rm[0].rm_so;
+        int eo = rm[0].rm_eo;
+        int cso = rm[1].rm_so;
+        int ceo = rm[1].rm_eo;
+
+        if (so == -1)
+            break;
+        if (so != 0 && count < maxSplit) {
+            split[count] = Str_Substr(str, start, start + so);
+            count += 1;
+        }
+        if (cso != -1 && count < maxSplit)  {
+            split[count] = Str_Substr(str, start + cso, start + ceo);
+            count += 1;
+        }
+        start += eo;
+    }
+    if (count < maxSplit && start < length) {
+        split[count] = Str_Substr(str, start, length);
+        count += 1;
+    }
+
+    return count;
+}
+
+
+int Str_IsEmpty(const char *str)
+{
+    while (*str) {
+        if (! isspace(*str)) 
+            break;
+        str++;
+    }
+    return 1;
 }

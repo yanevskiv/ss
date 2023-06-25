@@ -6,15 +6,15 @@
 
 .global value1, value2, value3, value4, value5, value6, value7
 
-
 .section my_code
-
 my_start:
     ld $0xFFFFFEFE, %sp
     ld $handler, %r1
     csrwr %r1, %handler
 
     int # software interrupt
+
+    ld $0xabcdef, %r1
 
     ld $1, %r1
     push %r1
@@ -30,7 +30,7 @@ my_start:
     call mathAdd
     st %r1, value3
 
-    ld $7, %r1
+    ld $8, %r1
     push %r1
     ld $11, %r1
     push %r1

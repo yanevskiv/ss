@@ -4,6 +4,14 @@
 #include <elf.h>
 #include <regex.h>
 
+#define ARR_SIZE(arr) (sizeof((arr)) / sizeof((arr)[0]))
+#define NORMAL 0
+#define FAINT  2
+#define RED    31
+#define GREEN  32
+#define YELLOW 33
+#define BLUE   34
+
 void Elf_Init(Elf_Builder *elf)
 {
     // e_ident
@@ -462,7 +470,7 @@ int Elf_GetSymbolCount(Elf_Builder *elf)
     Elf_PushSection(elf);
     Elf_UseSection(elf, ".symtab");
     Elf_Shdr *shdr = Elf_GetSection(elf);
-    int count = shdr->sh_size / shdr->sh_entsize;
+    int count = shdr->sh_size / sizeof(Elf_Sym) /* shdr->sh_entsize */;
     Elf_PopSection(elf);
     return count;
 }
@@ -511,8 +519,6 @@ Elf_Section Elf_GetCurrentSection(Elf_Builder *elf)
 {
     return elf->eb_current_section;
 }
-
-
 
 int Elf_GetRelaCount(Elf_Builder* elf)
 {
@@ -637,12 +643,6 @@ static void _Elf_PrepareForWriting(Elf_Builder *elf)
     elf->eb_ehdr.e_shoff = off;
 }
 
-#define NORMAL 0
-#define FAINT 2
-#define RED   31
-#define GREEN 32
-#define YELLOW 33
-#define BLUE 34
 static size_t _WriteHexBytesColor(void *data, size_t count, size_t index, FILE *output, int color)
 {
     unsigned char *bytes = data;
@@ -721,7 +721,6 @@ void Elf_WriteHex(Elf_Builder *elf, FILE *output)
     Elf_WriteHexColor(elf, output, 0);
 }
 
-#define ARR_SIZE(arr) (sizeof((arr)) / sizeof((arr)[0]))
 
 
 void _Elf_Buffer_ReadHexBytes(Elf_Buffer *buffer, FILE *input)
@@ -943,130 +942,146 @@ Elf_Word Elf_AddUniqueString(Elf_Builder *elf, const char *str)
 }
 
 
-//Elf_Word Elf_GetStringCount(Elf_Buidler *elf, const char *str)
-//{
-//    Elf_PushSection(elf);
-//    Elf_UseSection(elf, ".strtab");
-//    Elf_Word start = 0;
-//    int found = 0;
-//    while ((! found) && start < Elf_GetSectionSize(elf)) {
-//        char *check_str = Elf_GetSectionData(elf) + start;
-//        size_t len = strlen(check_str);
-//        printf("Hello??? %s\n", check_str);
-//        if (strcmp(str, check_str) == 0) {
-//            found = 1;
-//        }
-//        start += len + 1;
-//    }
-//
-//    Elf_PopSection(elf);
-//    
-//}
-
-
 void Elf_Link(Elf_Builder *dest, Elf_Builder *src)
 {
-    for (int i = 1; i <= Elf_GetSectionCount(src); i++) {
+    // Merge strings
+    for (Elf_Section i = 1; i <= Elf_GetSectionCount(src); i++) {
         Elf_PushSection(src);
         Elf_SetSection(src, i);
         Elf_Shdr *shdr = Elf_GetSection(src);
-        switch (shdr->sh_type) {
-            case SHT_STRTAB: {
-                Elf_Word off = 1;
-                while (off < Elf_GetSectionSize(src))  {
-                    char *str = Elf_GetSectionData(src) + 1;
-                    Elf_AddUniqueString(dest, str);
-                    off += strlen(str) + 1;
-                }
-            } break;
-            case SHT_SYMTAB: {
-                int i, size = shdr->sh_size / sizeof(Elf_Sym);
-                for (i = 1; i < size; i++) {
-                    Elf_Sym *sym = Elf_GetSymbol(src, i);
-                    const char *sym_name = Elf_GetSymbolName(src, i);
-                    if (ELF_ST_TYPE(sym->st_info) == STT_SECTION) {
-                        Elf_PushSection(dest);
-                        Elf_UseSection(dest, sym_name);
-                        Elf_PopSection(dest);
-                    } else {
-                        // Get symbol section name in the source
-                        Elf_PushSection(src);
-                        Elf_SetSection(src, sym->st_shndx);
-                        const char *section_name = Elf_GetSectionName(src);
-                        Elf_PopSection(src);
-
-                        // Import symbol to destination + copy relevant info
-                        Elf_PushSection(dest);
-                        Elf_UseSection(dest, section_name);
-                        Elf_Sym *dest_sym = Elf_UseSymbol(dest, sym_name);
-                        /* dest_sym->st_name - Set by Elf_UseSymbol() */
-                        dest_sym->st_info = sym->st_info;
-                        dest_sym->st_other = sym->st_other;
-                        dest_sym->st_shndx = Elf_GetCurrentSection(dest);
-                        dest_sym->st_value = sym->st_value;
-                        dest_sym->st_size  = sym->st_size;
-                        Elf_PopSection(dest);
-                    }
-                }
-            } break;
-            case SHT_RELA: {
-                // Initialize rela section
-                Elf_PushSection(dest);
-                Elf_UseSection(dest, Elf_GetSectionName(src));
-                Elf_GetSection(dest)->sh_type = SHT_RELA;
-                Elf_GetSection(dest)->sh_entsize= sizeof(Elf_Rela);
-                Elf_Word original_size = Elf_GetSectionSize(dest);
-                Elf_PopSection(dest);
-
-                // Add Rela entries
-                int i, size = Elf_GetSectionSize(src) / sizeof(Elf_Rela);
-                for (i = 0; i < size; i++) {
-                    // Get rela
-                    Elf_Rela *rela = Elf_GetSectionEntry(src, i);
-                    Elf_Half type = ELF_R_TYPE(rela->r_info);
-                    Elf_Word symndx = ELF_R_SYM(rela->r_info);
-
-                    // Get symbol and then section name
-                    Elf_PushSection(src);
-                    Elf_Sym *sym = Elf_GetSymbol(src, symndx);
-                    Elf_SetSection(src, sym->st_shndx);
-                    const char *section_name = Elf_GetSectionName(src);
-                    const char *sym_name = Elf_GetSymbolName(src, symndx);
-                    Elf_PopSection(src);
-
-                    // Import symbol if necessary
-                    // What we actually want is the new symndx in the `dest`
-                    Elf_PushSection(dest);
-                    Elf_UseSection(dest, section_name);
-                    Elf_Sym *dest_sym = Elf_UseSymbol(dest, sym_name);
-                    /* dest_sym->st_name - Set by Elf_UseSymbol() */
-                    dest_sym->st_info = sym->st_info;
-                    dest_sym->st_other = sym->st_other;
-                    dest_sym->st_shndx = Elf_GetCurrentSection(dest);
-                    dest_sym->st_value= sym->st_value;
-                    dest_sym->st_size = sym->st_size;
-
-                    Elf_Word dest_symndx = Elf_FindSymbol(dest, sym_name);
-                    Elf_PopSection(dest);
-
-                    // Add rela to destination
-                    Elf_Rela dest_rela;
-                    dest_rela.r_offset = original_size + rela->r_offset;
-                    dest_rela.r_info = ELF_R_INFO(dest_symndx, type);
-                    dest_rela.r_addend = rela->r_addend;
-                    Elf_PushSection(dest);
-                    Elf_UseSection(dest, Elf_GetSectionName(src));
-                    Elf_PushBytes(dest, &dest_rela, sizeof(dest_rela));
-                    Elf_PopSection(dest);
-                }
-            } break;
-            default: {
-                Elf_PushSection(dest);
-                Elf_UseSection(dest, Elf_GetSectionName(src));
-                Elf_PushBytes(dest, Elf_GetSectionData(src), Elf_GetSectionSize(src));
-                Elf_PopSection(dest);
-            } break;
+        if (shdr->sh_type == SHT_STRTAB) {
+            Elf_Word off = 1;
+            while (off < Elf_GetSectionSize(src))  {
+                const char *str = Elf_GetSectionData(src) + off;
+                Elf_AddUniqueString(dest, str);
+                off += strlen(str) + 1;
+            }
         }
         Elf_PopSection(src);
     }
+
+    // Merge symbols
+    for (Elf_Section i = 1; i <= Elf_GetSectionCount(src); i++) {
+        Elf_PushSection(src);
+        Elf_SetSection(src, i);
+        Elf_Shdr *shdr = Elf_GetSection(src);
+        if (shdr->sh_type == SHT_SYMTAB) {
+            int i, size = shdr->sh_size / sizeof(Elf_Sym);
+            for (i = 1; i < size; i++) {
+                Elf_Sym *sym = Elf_GetSymbol(src, i);
+                const char *symName = Elf_GetSymbolName(src, i);
+                if (ELF_ST_TYPE(sym->st_info) == STT_SECTION) {
+                    Elf_PushSection(dest);
+                    Elf_UseSection(dest, symName);
+                    Elf_PopSection(dest);
+                } else {
+                    // Create or fetch symbol in the destination
+                    Elf_Sym *destSym = Elf_UseSymbol(dest, symName);
+
+                    // Copy symbol only if it's undefined in the destination
+                    if (destSym->st_shndx == SHN_UNDEF) {
+                        // Copy symbol
+                        //  - st_name is set by Elf_UseSymbol()
+                        //  - st_shndx will depend on which section (if any) the src symbol belongs to
+                        // destSym->st_name - Set by Elf_UseSymbol()
+                        // destSym->st_shndx - Set below
+                        destSym->st_info = sym->st_info;
+                        destSym->st_other = sym->st_other;
+                        destSym->st_value = sym->st_value;
+                        destSym->st_size  = sym->st_size;
+
+                        // Import symbol to destination
+                        if (sym->st_shndx == SHN_UNDEF || sym->st_shndx == SHN_ABS) {
+                            // Undefined or absolute symbol
+                            destSym->st_shndx = sym->st_shndx;
+                        } else {
+                            // Label symbol
+                            // Get symbol section name in the source
+                            Elf_PushSection(src);
+                            Elf_SetSection(src, sym->st_shndx);
+                            const char *sectionName = Elf_GetSectionName(src);
+                            Elf_PopSection(src);
+
+                            // Import symbol
+                            Elf_PushSection(dest);
+                            Elf_UseSection(dest, sectionName);
+                            // Elf_UseSection() may potentially relocate the symbol table.
+                            // to be safe, we fetch the symbol again
+                            destSym = Elf_UseSymbol(dest, symName);
+                            destSym->st_value += Elf_GetSectionSize(dest);
+                            destSym->st_shndx = Elf_GetCurrentSection(dest);
+                            Elf_PopSection(dest);
+                        }
+                    }
+                }
+            }
+        }
+        Elf_PopSection(src);
+    }
+
+    // Merge relas
+    for (Elf_Section i = 1; i <= Elf_GetSectionCount(src); i++) {
+        Elf_PushSection(src);
+        Elf_SetSection(src, i);
+        Elf_Shdr *shdr = Elf_GetSection(src);
+        if (shdr->sh_type == SHT_RELA) {
+            // Initialize rela section
+            Elf_PushSection(dest);
+            Elf_UseSection(dest, Elf_GetSectionName(src));
+            const char *shName = Elf_GetSectionName(src) + strlen(".rela");
+            Elf_GetSection(dest)->sh_type = SHT_RELA;
+            Elf_GetSection(dest)->sh_entsize = sizeof(Elf_Rela);
+            Elf_PopSection(dest);
+
+            // Get dest section size
+            Elf_Word shDestSize = 0;
+            if (Elf_SectionExists(dest, shName)) {
+                Elf_PushSection(dest);
+                Elf_UseSection(dest, shName);
+                shDestSize = Elf_GetSectionSize(dest);
+                Elf_PopSection(dest);
+            }
+
+            // Add Rela entries
+            int i, size = Elf_GetSectionSize(src) / sizeof(Elf_Rela);
+            for (i = 0; i < size; i++) {
+                // Get src rela + extract info 
+                Elf_Rela *rela = Elf_GetSectionEntry(src, i);
+                Elf_Half type = ELF_R_TYPE(rela->r_info);
+                Elf_Word symndx = ELF_R_SYM(rela->r_info);
+                Elf_Sym *sym = Elf_GetSymbol(src, symndx);
+                const char *sym_name = Elf_GetSymbolName(src, symndx);
+                Elf_Word dest_symndx = Elf_FindSymbol(dest, sym_name);
+
+                // Add rela to destination
+                Elf_Rela dest_rela;
+                dest_rela.r_offset = shDestSize + rela->r_offset;
+                dest_rela.r_info = ELF_R_INFO(dest_symndx, type);
+                dest_rela.r_addend = rela->r_addend;
+                Elf_PushSection(dest);
+                Elf_UseSection(dest, Elf_GetSectionName(src));
+                Elf_PushBytes(dest, &dest_rela, sizeof(dest_rela));
+                Elf_PopSection(dest);
+            }
+
+
+        }
+        Elf_PopSection(src);
+    }
+
+    // Merge sections
+    for (Elf_Section i = 1; i <= Elf_GetSectionCount(src); i++) {
+        Elf_PushSection(src);
+        Elf_SetSection(src, i);
+        Elf_Shdr *shdr = Elf_GetSection(src);
+        if (shdr->sh_type != SHT_STRTAB && shdr->sh_type != SHT_SYMTAB && shdr->sh_type != SHT_RELA) {
+            Elf_PushSection(dest);
+            Elf_UseSection(dest, Elf_GetSectionName(src));
+            Elf_PushBytes(dest, Elf_GetSectionData(src), Elf_GetSectionSize(src));
+            Elf_PopSection(dest);
+
+        }
+        Elf_PopSection(src);
+    }
+
 }

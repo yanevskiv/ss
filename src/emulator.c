@@ -1134,6 +1134,20 @@ void Emu_RunElf(Elf_Builder *elf, FILE *output, Emu_FlagsType flags)
     fflush(output);
 }
 
+// Print Emulator registers
+void Emu_PrintRegs(FILE *output)
+{
+    fprintf(output, "-----------------------------------------------------------\n");
+    printf("Emulated processor executed halt instruction\n");
+    printf("Emulated processor state:\n");
+    fprintf(output, " r0=0x%08x  r1=0x%08x  r2=0x%08x  r3=0x%08x\n",  GPR[0],  GPR[1],  GPR[2],  GPR[3]);
+    fprintf(output, " r4=0x%08x  r5=0x%08x  r6=0x%08x  r7=0x%08x\n",  GPR[4],  GPR[5],  GPR[6],  GPR[7]);
+    fprintf(output, " r8=0x%08x  r9=0x%08x r10=0x%08x r11=0x%08x\n",  GPR[8],  GPR[9], GPR[10], GPR[11]);
+    fprintf(output, "r12=0x%08x r13=0x%08x r14=0x%08x r15=0x%08x\n", GPR[12], GPR[13], GPR[14], GPR[15]);
+    fprintf(output, "\nstatus  = %08x\nhandler = %08x\ncause   = %08x\n", CSR[STATUS], CSR[HANDLER], CSR[CAUSE]);
+    fprintf(output, "-----------------------------------------------------------\n");
+}
+
 static void show_help(FILE* file) 
 {
     const char *help_text = 

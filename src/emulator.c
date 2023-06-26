@@ -723,6 +723,417 @@ void Emu_DebugInstr(FILE *output, Asm_OcType oc, Asm_ModType mod, Asm_RegType ra
     fprintf(output, "\n");
 }
 
+// Running the emulator
+void Emu_RunElf(Elf_Builder *elf, FILE *output, Emu_FlagsType flags)
+{
+    // Reset registers
+    GPR[PC] = 0x40000000;
+    GPR[SP] = 0x80000000;
+
+    // Load elf
+    Mem_LoadElf(elf);
+
+    // Initialize memory mapping
+    Mem_InitMemoryMap(Emu_MemoryMapCallback, EMU_MMAP_START, EMU_MMAP_END);
+ 
+    // Number of executed instructions and timer interrupts
+    int instrCount = 0;
+
+    // Initialize muetx
+    Emu_MutexInit();
+
+    // Start terminal and timer
+    if (flags & F_EMU_TIMER)
+        Emu_StartTimer();
+    if (flags & F_EMU_TERMINAL)
+        Emu_StartTerminal();
+
+    // Start emulating
+    Emu_StartEmulation();
+    while (Emu_IsRunning(THR_EMULATOR))  {
+        // Fetch instruction
+        unsigned char bytes[4];
+        Mem_ReadBytes(bytes, GPR[PC], ASM_INSTR_WIDTH);
+        GPR[PC] += ASM_INSTR_WIDTH;
+        Asm_OcType  oc  = (bytes[0] >> 4) & 0xf;
+        Asm_ModType mod = (bytes[0] >> 0) & 0xf;
+        Asm_RegType ra  = (bytes[1] >> 4) & 0xf;
+        Asm_RegType rb  = (bytes[1] >> 0) & 0xf;
+        Asm_RegType rc  = (bytes[2] >> 4) & 0xf; 
+        Asm_DispType disp = (((bytes[2] >> 0) & 0xf) << 8) | bytes[3];
+        if (disp >= (1 << 11))  {
+            disp -= (1 << 12);
+        }
+        instrCount += 1;
+
+        if (flags & F_EMU_DEBUG) {
+            printf("\e[32mInstr\e[0m %2d: ", instrCount);
+            Emu_DebugInstr(stderr, oc, mod, ra, rb, rc, disp);
+            Emu_PrintRegs(stderr);
+        }
+
+        // Execute instruction
+        switch (oc) {
+            // Halt
+            case OC_HALT: {
+                Emu_StopEmulation();
+            } break;
+
+            // Software interrupt
+            case OC_INT: {
+                INT[INT_SOFTWARE] = 1;
+            } break;
+
+            // Call
+            case OC_CALL: {
+                switch (mod) {
+                    case MOD_CALL_REG: {
+                        // push pc; pc <= ra + rb + disp
+                        Asm_Addr addr = GPR[ra] + GPR[rb] + disp;
+                        GPR[SP] -= 4;
+                        Mem_WriteWord(GPR[SP], GPR[PC]);
+                        GPR[PC] = addr;
+                    } break;
+
+                    case MOD_CALL_MEM: {
+                        // push pc; pc <= mem32[ra + rb + disp]
+                        Asm_Addr addr = GPR[ra] + GPR[rb] + disp;
+                        GPR[SP] -= 4;
+                        Mem_WriteWord(GPR[SP], GPR[PC]);
+                        GPR[PC] = Mem_ReadWord(addr);
+                    } break;
+
+                    case MOD_CALL_RET: {
+                        // pop pc
+                        GPR[PC] = Mem_ReadRawWord(GPR[SP]);
+                        GPR[SP] += 4;
+                    } break;
+
+                    case MOD_CALL_IRET: {
+                        // pop status
+                        // pop pc
+                        GPR[STATUS] = Mem_ReadRawWord(GPR[SP]);
+                        GPR[SP] += 4;
+                        GPR[PC] = Mem_ReadRawWord(GPR[SP]);
+                        GPR[SP] += 4;
+                    } break;
+                }
+            } break;
+
+            // Branch
+            case OC_BRANCH: {
+                switch (mod) {
+                    case MOD_BRANCH_0: {
+                        GPR[PC] = GPR[ra] + disp;
+                    } break;
+
+                    case MOD_BRANCH_1: {
+                        if (GPR[rb] == GPR[rc])
+                            GPR[PC] = GPR[ra] + disp;
+                    } break;
+
+                    case MOD_BRANCH_2: {
+                        if (GPR[rb] != GPR[rc])
+                            GPR[PC] = GPR[ra] + disp;
+                    } break;
+
+                    case MOD_BRANCH_3: {
+                        if ((int) GPR[rb] > (int)GPR[rc])
+                            GPR[PC] = GPR[ra] + disp;
+                    } break;
+
+                    case MOD_BRANCH_4: {
+                        GPR[PC] = Mem_ReadWord(GPR[ra] + disp);
+                    } break;
+
+                    case MOD_BRANCH_5: {
+                        if (GPR[rb] == GPR[rc])
+                            GPR[PC] = Mem_ReadWord(GPR[ra] + disp);
+                    } break;
+
+                    case MOD_BRANCH_6: {
+                        if (GPR[rb] != GPR[rc])
+                            GPR[PC] = Mem_ReadWord(GPR[ra] + disp);
+                    } break;
+
+                    case MOD_BRANCH_7: {
+                        if ((int)GPR[rb] > (int)GPR[rc])
+                            GPR[PC] = Mem_ReadWord(GPR[ra] + disp);
+                    } break;
+                }
+            } break;
+
+            // Xchg
+            case OC_XCHG: {
+                Asm_Word temp = GPR[rb];
+                GPR[rb] = GPR[rc];
+                GPR[rc] = temp;
+            } break;
+
+            // Arithmetic
+            case OC_ARITH: {
+                switch (mod) {
+                    case MOD_ARITH_ADD: { 
+                        GPR[ra] = GPR[rb] + GPR[rc]; 
+                    } break;
+
+                    case MOD_ARITH_SUB: { 
+                        GPR[ra] = GPR[rb] - GPR[rc]; 
+                    } break;
+
+                    case MOD_ARITH_MUL: { 
+                        GPR[ra] = GPR[rb] * GPR[rc]; 
+                    } break;
+
+                    case MOD_ARITH_DIV: { 
+                        GPR[ra] = GPR[rb] / GPR[rc]; 
+                    } break;
+                }
+            } break;
+
+            // Logic
+            case OC_LOGIC: {
+                switch (mod) {
+                    case MOD_LOGIC_NOT: { 
+                        GPR[ra] = ~GPR[rb];
+                    }  break;
+
+                    case MOD_LOGIC_AND: { 
+                        GPR[ra] = GPR[rb] & GPR[rc];
+                    } break;
+
+                    case MOD_LOGIC_OR:  { 
+                        GPR[ra] = GPR[rb] | GPR[rc];
+                    } break;
+
+                    case MOD_LOGIC_XOR: { 
+                        GPR[ra] = GPR[rb] ^ GPR[rc];
+                    } break;
+                }
+            } break;
+
+            // Shift
+            case OC_SHIFT: {
+                switch (mod) {
+                    case MOD_SHIFT_LEFT:  {
+                        GPR[ra] = GPR[rb] << GPR[rc];
+                    } break;
+
+                    case MOD_SHIFT_RIGHT: {
+                        GPR[ra] = GPR[rb] >> GPR[rc];
+                    } break;
+                }
+            } break;
+
+            // Store
+            case OC_STORE: {
+                switch (mod) {
+                    case MOD_STORE_0: {
+                        Mem_WriteWord(GPR[ra] + GPR[rb] + disp, GPR[rc]);
+                    } break;
+
+                    case MOD_STORE_1: {
+                        Mem_WriteWord(Mem_ReadWord(GPR[ra] + GPR[rb] + disp), GPR[rc]);
+                    } break;
+
+                    case MOD_STORE_2: {
+                        GPR[ra] = GPR[ra] + disp;
+                        Mem_WriteWord(GPR[ra], GPR[rc]);
+                    } break;
+                }
+            } break;
+
+            // Load
+            case OC_LOAD: {
+                switch (mod) {
+                    case MOD_LOAD_0: {
+                        GPR[ra] = CSR[rb];
+                    } break;
+
+                    case MOD_LOAD_1: {
+                        GPR[ra] = GPR[rb] + disp;
+                    } break;
+
+                    case MOD_LOAD_2: {
+                        GPR[ra] = Mem_ReadWord(GPR[rb] + GPR[rc] + disp);
+                    } break;
+
+                    case MOD_LOAD_3: {
+                        GPR[ra] = Mem_ReadWord(GPR[rb]);
+                        GPR[rb] = GPR[rb] + disp;
+                    } break;
+
+
+                    case MOD_LOAD_4: {
+                        CSR[ra] = GPR[rb];
+                    } break;
+
+                    case MOD_LOAD_5: {
+                        CSR[ra] = CSR[rb] | disp;
+                    } break;
+
+                    case MOD_LOAD_6: {
+                        CSR[ra] = Mem_ReadWord(GPR[rb] + GPR[rc] + disp);
+                    } break;
+
+                    case MOD_LOAD_7: {
+                        CSR[ra] = Mem_ReadWord(GPR[rb]);
+                        GPR[rb] = GPR[rb] + disp;
+                    } break;
+
+                }
+            } break;
+
+            // Locking
+            case OC_LOCK: {
+                switch (mod) {
+                    case MOD_LOCK_LOCK: {
+                        INT_ENA = 0;
+                        LCK_LVL += 1;
+                    } break;
+
+                    case MOD_LOCK_UNLOCK: {
+                        if (LCK_LVL > 0) {
+                            LCK_LVL -= 1;
+                            if (LCK_LVL == 0) {
+                                INT_ENA = 1;
+                            }
+                        }
+                    } break;
+                }
+            } break;
+
+            // Probing
+            case OC_PROBE: {
+                // probe $lit
+                switch (mod) {
+                    // probe $lit
+                    case MOD_PROBE_LIT: {
+                        fprintf(output, "Probe lit: %d\n", disp);
+                        fflush(output);
+                    } break;
+
+                    // probe %reg
+                    case MOD_PROBE_REG: {
+                        fprintf(output, "Probe reg: r%d=0x%08x\n", ra, GPR[ra]);
+                        fflush(output);
+                    } break;
+
+                    // probe [%reg + disp]
+                    case MOD_PROBE_MEM_REG_DISP: {
+                        fprintf(output, "Probe mem reg: mem32[r%d=0x%08x + %d]=0x%08x\n", ra, GPR[ra], disp, Mem_ReadWord(GPR[ra] + disp));
+                        fflush(output);
+                    } break;
+
+                    // probe all
+                    case MOD_PROBE_ALL: {
+                        Emu_PrintRegs(output);
+                        fflush(output);
+                    } break;
+                }
+            }
+
+            // Unknown instruction (interrupt)
+            default: {
+                INT[INT_INSTRUCTION] = 1;
+            } break;
+        }
+
+        // Process interrupts (but only if handler is set)
+        Emu_IntType idx;
+        if (CSR[HANDLER] != 0x0 && INT_ENA) {
+            Emu_MutexLock();
+            for (idx = 0; idx < INT_NONE; idx++) {
+                if (! INT[idx])
+                    continue;
+                Asm_Word status = CSR[STATUS];
+                Asm_Word cause = CAUSE_UNKNOWN;
+                switch (idx) {
+                    // Bad instruction interrupt
+                    case INT_INSTRUCTION:
+                    {
+                        cause = CAUSE_INSTRUCTION;
+                    } break;
+
+                    // Software interrupt
+                    case INT_SOFTWARE: 
+                    {
+                        //status = status & (~0x1); 
+                        cause = CAUSE_SOFTWARE;
+                    } break;
+
+                    // Timer interrupt
+                    case INT_TIMER:
+                    {
+                        if ((CSR[STATUS] & ST_MASK_INTERRUPTS) || (CSR[STATUS] & ST_MASK_TIMER)) 
+                            continue;
+                        status |= ST_MASK_INTERRUPTS;
+                        cause = CAUSE_TIMER;
+                    } break;
+
+                    // Terminal interrupt
+                    case INT_TERMINAL:
+                    {
+                        // Check if maksed
+                        if ((CSR[STATUS] & ST_MASK_INTERRUPTS) || (CSR[STATUS] & ST_MASK_TERMINAL)) 
+                            continue;
+
+                        // Set cause and mask interrupts
+                        status |= ST_MASK_INTERRUPTS;
+                        cause = CAUSE_TERMINAL;
+                    } break;
+                }
+
+                // Only 
+                if (cause != CAUSE_UNKNOWN) {
+                    // Jump to handler
+                    // push idx;
+                    // push adr;
+                    // push status; 
+                    // push pc; 
+                    // cause <= 4; 
+                    // status <= status & (~0x1); 
+                    // pc <= handle;
+                    GPR[SP] -= 4;
+                    Mem_WriteRawWord(GPR[SP], GPR[PC]);
+                    GPR[SP] -= 4;
+                    Mem_WriteRawWord(GPR[SP], CSR[STATUS]);
+                    GPR[SP] -= 4;
+                    Mem_WriteRawWord(GPR[SP], GPR[ADR]);
+                    GPR[SP] -= 4;
+                    Mem_WriteRawWord(GPR[SP], GPR[IDX]);
+                    CSR[CAUSE] = cause;
+                    CSR[STATUS] = status;
+                    GPR[PC] = CSR[HANDLER];
+                    INT[idx] = 0;
+                    if (flags & F_EMU_DEBUG) {
+                        fprintf(stderr, "\e[31mInterrupt\e[0m %d\n", cause);
+                    }
+                    break;
+                }
+            }
+            Emu_MutexUnlock();
+        }
+    }
+
+    // Cancel terminal and timer
+    if (flags & F_EMU_TIMER)
+        Emu_StopTimer();
+    if (flags & F_EMU_TERMINAL)
+        Emu_StopTerminal();
+    if (flags & F_EMU_TIMER)
+        Emu_JoinTimer();
+    if (flags & F_EMU_TERMINAL)
+        Emu_JoinTerminal();
+
+    // Destroy mutex
+    Emu_MutexDestroy();
+
+    // Print registers
+    Emu_PrintRegs(output);
+    fflush(output);
+}
+
 static void show_help(FILE* file) 
 {
     const char *help_text = 

@@ -20,7 +20,6 @@
 #define DebugInstr(...)
 #endif
 
-
 // Pending interrupts
 volatile int INT[4] = { 0 };
 
@@ -378,13 +377,13 @@ void Emu_MutexInit(void)
 // Lock mutex
 void Emu_MutexLock(void)
 {
-    //pthread_mutex_lock(&Emu_ThreadMutex);
+    pthread_mutex_lock(&Emu_ThreadMutex);
 }
 
 // Unlock mutex
 void Emu_MutexUnlock(void)
 {
-    //pthread_mutex_unlock(&Emu_ThreadMutex);
+    pthread_mutex_unlock(&Emu_ThreadMutex);
 }
 
 // Destroy mutex
@@ -512,10 +511,8 @@ void Emu_MemoryMapCallback(MPR_Event event, Asm_Addr addr, Asm_Word value, Asm_W
     switch (addr) {
         case EMU_TERM_OUT: {
             if (event == MPR_WRITE) {
-                Emu_MutexLock();
                 fprintf(stdout, "%c", (char) value);
                 fflush(stdout);
-                Emu_MutexUnlock();
             }
         } break;
 

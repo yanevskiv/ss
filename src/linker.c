@@ -4,7 +4,6 @@
 #include <util.h>
 #include <types.h>
 
-regmatch_t matches[MAX_REGEX_MATCHES];
 
 int main(int argc, char *argv[])
 {
@@ -23,6 +22,9 @@ int main(int argc, char *argv[])
     // Placement count
     int pCount = 0;
 
+    // For regex matching
+    regmatch_t rm[MAX_REGEX_MATCHES];
+
     // Output file 
     FILE *output = stdout;
     int i;
@@ -33,10 +35,10 @@ int main(int argc, char *argv[])
         } else if (Str_Equals(argv[i], "-relocatable")) {
             // -relocatable option
             flags |= F_LINKER_RELOC;
-        } else if (Str_RegexMatch(argv[i], "-place=([^@]*)@(0x[0-9a-fA-F]+)", ARR_SIZE(matches), matches)) {
+        } else if (Str_RegexMatch(argv[i], "-place=([^@]*)@(0x[0-9a-fA-F]+)", ARR_SIZE(rm), rm)) {
             // -place=section@addr option
-            char *s_name = Str_Substr(argv[i], matches[1].rm_so, matches[1].rm_eo);
-            char *s_addr = Str_Substr(argv[i], matches[2].rm_so, matches[2].rm_eo);
+            char *s_name = Str_Substr(argv[i], rm[1].rm_so, rm[1].rm_eo);
+            char *s_addr = Str_Substr(argv[i], rm[2].rm_so, rm[2].rm_eo);
             Linker_PlaceList[pCount].p_name = s_name;
             Linker_PlaceList[pCount].p_addr = Str_ParseInt(s_addr);
             pCount += 1;
@@ -166,7 +168,7 @@ int main(int argc, char *argv[])
         Elf_Destroy(&objects[i]);
     for (i = 0; i < pCount; i++)
         free(Linker_PlaceList[i].p_name);
-    if (output != stdout)
+    if (output && output != stdout)
         fclose(output);
     return 0;
 }

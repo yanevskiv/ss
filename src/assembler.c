@@ -2214,9 +2214,9 @@ int main(int argc, char *argv[])
     }
 
     // Close files
-    if (input != stdin) 
+    if (input && input != stdin) 
         fclose(input);
-    if (output != stdout)
+    if (output && output != stdout)
         fclose(output);
     return 0;
 }

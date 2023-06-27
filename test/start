@@ -1,0 +1,12 @@
+#!/bin/bash
+case "$1" in
+    nivo-a) which=nivo-a ;;
+    nivo-b) which=nivo-b ;;
+    nivo-c) which=nivo-c ;;
+esac
+[ ! -z "${which}" ] && {
+    cd ${which}
+    ./start.sh
+} ||  {
+    echo "start { nivo-a | nivo-b | nivo-c }"
+}

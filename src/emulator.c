@@ -740,7 +740,6 @@ void Emu_RunElf(Elf_Builder *elf, FILE *output, Emu_FlagsType flags)
     Mem_InitMemoryMap(Emu_MemoryMapCallback, EMU_MMAP_START, EMU_MMAP_END);
  
     // Number of executed instructions and timer interrupts
-    int timerCount = 0;
     int instrCount = 0;
 
     // Initialize muetx
@@ -1164,14 +1163,9 @@ static void show_help(FILE* file)
 
 int main(int argc, char *argv[])
 {
-    if (argc != 2)  {
-        show_help(stdout);
-        return 0;
-    }
-
     // Read elf
     FILE *input = NULL;
-    const char *input_name = argv[1];
+    //const char *input_name = argv[1];
     Emu_FlagsType flags = 
           F_EMU_NONE 
         // | F_EMU_TIMER
@@ -1179,15 +1173,33 @@ int main(int argc, char *argv[])
         // | F_EMU_DEBUG
 
     ;
-    if (Str_Equals(input_name, "-")) {
-        input = stdin;
-    } else {
-        input = fopen(input_name, "r");
-        if (input == NULL)  {
-            fprintf(stderr, "Error (Emulator): Failed to open file '%s' for reading\n", input_name);
-            return 1;
+    int i; 
+    for (i = 1; i < argc; i++)  {
+        if (Str_Equals(argv[i], "-timer")) {
+            flags |= F_EMU_TIMER;
+        } else if (Str_Equals(argv[i], "-terminal")) {
+            flags |= F_EMU_TERMINAL;
+        } else if (Str_Equals(argv[i], "-debug")) {
+            flags |= F_EMU_DEBUG;
+        } else if (Str_Equals(argv[i], "-")) {
+            if (! input) {
+                input = stdin;
+            } else {
+                Show_Warning("Multiple input files provided (Only first one used)");
+            }
+        } else {
+            if (! input) {
+                input = fopen(argv[i], "r");
+                if (input == NULL)  {
+                    fprintf(stderr, "Error (Emulator): Failed to open file '%s' for reading\n", argv[i]);
+                    return 1;
+                }
+            } else {
+                Show_Warning("Multiple input files provided (Only first one used)");
+            }
         }
     }
+
 
     Elf_Builder elf;
     Elf_Init(&elf);

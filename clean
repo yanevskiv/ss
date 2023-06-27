@@ -1,4 +1,0 @@
-#!/bin/bash
-rm -f asembler
-rm -f linker
-rm -f emulator

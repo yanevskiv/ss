@@ -1725,7 +1725,6 @@ int Asm_AddInstruction(Elf_Builder *elf, const char *instrName, const char *args
      // [x] probe
     if (! instrError) {
         int opCode = Asm_InstrList[idx].i_op_code;
-        int instrType = Asm_InstrList[idx].i_type;
         switch (instrType) {
             // Unknown instruction
             default: {

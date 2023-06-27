@@ -1,4 +1,5 @@
-cd test/nivo-a
+#!/bin/bash
+
 ASSEMBLER=../../assembler
 LINKER=../../linker
 EMULATOR=../../emulator

@@ -1,4 +1,4 @@
-cd test/nivo-b
+#!/bin/bash
 ASSEMBLER=../../assembler
 LINKER=../../linker
 EMULATOR=../../emulator
@@ -11,4 +11,4 @@ ${LINKER} -hex \
   -place=my_code@0x40000000 \
   -o program.hex \
   main.o isr_terminal.o isr_timer.o handler.o
-${EMULATOR} program.hex
+${EMULATOR} -terminal program.hex

@@ -68,7 +68,7 @@
 #define X_EXP             (XBEG XS CAPTURE("[ \t]+|\\$?[_.a-zA-Z0-9]+|\\(|\\)|\\+|-|<<|>>|\\*|/|^|&|\\|") "*" XS XEND)
 #define X_OPERATOR        CAPTURE("\\(|\\)|\\+|-|\\*|/|~|&|\\||\\^|<<|>>|==|<|>|<=|>=|\\|\\||&&")
 
-// Regex for assembler
+// Regex for assembling
 #define X_EMPTY_LINE      (XBEG XS XEND)
 #define X_COMMENT_LINE    (XBEG XS "#.*" XEND)
 #define X_EXTRACT_LABEL   (XBEG XS CAPTURE("[^:]*") XS ":" CAPTURE(XANY) XEND)

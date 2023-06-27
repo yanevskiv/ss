@@ -84,8 +84,8 @@ static Asm_DirecInfo Asm_DirecList[] = {
 
 // List of equ operators
 Equ_OperInfo Equ_OperList[] = {
-    // { "+",  O_POS, 2,  1 },
-    // { "-",  O_NEG, 2,  1 },
+    // { "+",  O_POS, 2,  1, O_ASOC_RTL },
+    // { "-",  O_NEG, 2,  1, O_ASOC_RTL },
     { "~",  O_NOT, 2,  1, O_ASOC_LTR },
     { "*",  O_MUL, 3,  2, O_ASOC_LTR },
     { "/",  O_DIV, 3,  2, O_ASOC_LTR },
@@ -900,10 +900,8 @@ int Asm_ParseRegOperand(const char *str)
         return 15;
     } else if (Str_CheckMatch(str, "^%r([0-9]+)$"))  {
         int reg = strtol(str + 2, NULL, 10);
-        if (reg >= GPR_COUNT)  {
-            return -1;
-        }
-        return reg;
+        if (reg < GPR_COUNT) 
+            return reg;
     } 
     return -1;
 }
@@ -1056,6 +1054,7 @@ int Asm_SplitArgs(const char *str, int size, char **args)
     }
     if (empty)
         return 0;
+
     enum {
         MODE_NORMAL,
         MODE_STR,

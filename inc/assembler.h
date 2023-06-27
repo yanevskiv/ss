@@ -13,7 +13,6 @@ Elf_Sym *Asm_AddLabel(Elf_Builder *elf, const char *label);
 Elf_Sym *Asm_AddAbsSymbol(Elf_Builder *elf, const char *name, Elf_Addr value);
 Elf_Rela *Asm_AddRela(Elf_Builder *elf, const char *symbol, Elf_Half type, Elf_Sxword addend);
 
-
 // Loading values into registers
 void Asm_PushXorZero(Elf_Builder *elf, Asm_RegType gprD);
 void Asm_PushLoadByte(Elf_Builder *elf, Asm_RegType rDest, Asm_Byte value);

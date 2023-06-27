@@ -139,6 +139,7 @@ void Elf_Destroy(Elf_Builder *elf)
         Elf_Buffer_Destroy(&elf->eb_buffer[i]);
     }
     free(elf->eb_buffer);
+    free(elf->eb_shdr);
 }
 
 void Elf_Buffer_Destroy(Elf_Buffer *buffer)

@@ -77,7 +77,7 @@ const Emu_TimeType Emu_TimConfigMap[] = {
 volatile int Emu_TimConfig = 0;
 
 // Last character read from the terminal
-volatile Asm_Word Emu_TermBuffer = 'a';
+volatile Asm_Word Emu_TermBuffer = '\0';
 
 // Check whether an address points to a memory mapped register
 int Mem_IsMemoryMapped(Elf_Addr addr)
@@ -418,7 +418,7 @@ int Emu_IsRunning(Emu_ThreadType thr)
 }
 
 // Timer thread callback
-static void *Emu_TimerCallback(void *data)
+void *Emu_TimerCallback(void *data)
 {
     while (Emu_IsRunning(THR_TIMER)) {
         if (Emu_TimConfig >= 0 && Emu_TimConfig < ARR_SIZE(Emu_TimConfigMap)) {
@@ -436,7 +436,7 @@ static void *Emu_TimerCallback(void *data)
 
 
 // Terminal thread callback
-static void *Emu_TerminalCallback(void *data)
+void *Emu_TerminalCallback(void *data)
 {
     struct termios old_attributes, new_attributes;
 
@@ -1202,13 +1202,18 @@ int main(int argc, char *argv[])
 
 
     Elf_Builder elf;
-    Elf_Init(&elf);
     Elf_ReadHexInit(&elf, input);
     Emu_RunElf(&elf, stdout, flags);
 
     // For testing
     //Elf_WriteDump(&elf, stdout);
 
+    Elf_Destroy(&elf);
+
     Mem_Clear();
+
+    if (input && input != stdin)
+        fclose(input);
+        
     return 0;
 }

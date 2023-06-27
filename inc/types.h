@@ -36,7 +36,10 @@
 #define BUF_DEFAULT_SIZE  10
 #define MAX_LINKER_OBJECTS 128
 #define MAX_REGEX_MATCHES 100
-#define GPR_COUNT 18
+#define MAX_EQU_TOKENS 128
+#define MAX_EQU_STACK  128
+#define MAX_EQU_OPER_ARGS 2
+#define GPR_COUNT 16
 #define CSR_COUNT 3
 
 // Regex pirmitive
@@ -44,11 +47,13 @@
 #define XEND       "$"
 #define XLIT       "[-+]?[0-9]+|[-+]?0x[0-9a-fA-F]+"
 #define XSYM       "[_a-zA-Z.][-+_.a-zA-Z0-9]*"
-#define XGPR       "%r[0-9]?[0-9]"
+#define XGPR       "%r[0-9]?[0-9]|%sp|%pc"
 #define XCSR       "%status|%handler|%cause"
 #define XREG       XGPR "|" XCSR
 #define XS         "[ \t]*"
 #define CAPTURE(X) "(" X ")"
+#define XANY       ".*"
+#define XDOLLAR    "\\$"
 
 // Regex composite
 #define X_LIT             (XBEG XS CAPTURE(XLIT) XS XEND)
@@ -63,6 +68,25 @@
 #define X_EXP             (XBEG XS CAPTURE("[ \t]+|\\$?[_.a-zA-Z0-9]+|\\(|\\)|\\+|-|<<|>>|\\*|/|^|&|\\|") "*" XS XEND)
 #define X_OPERATOR        CAPTURE("\\(|\\)|\\+|-|\\*|/|~|&|\\||\\^|<<|>>|==|<|>|<=|>=|\\|\\||&&")
 
+// Regex for assembler
+#define X_EMPTY_LINE      (XBEG XS XEND)
+#define X_COMMENT_LINE    (XBEG XS "#.*" XEND)
+#define X_EXTRACT_LABEL   (XBEG XS CAPTURE("[^:]*") XS ":" CAPTURE(XANY) XEND)
+#define X_EXTRACT_DIREC   (XBEG XS CAPTURE("\\.[a-zA-Z0-9_]+") XS CAPTURE(XANY) XEND)
+#define X_EXTRACT_INSTR   (XBEG XS CAPTURE("[a-zA-Z0-9_]+") XS CAPTURE(XANY) XEND)
+
+// Regex for operand parsing
+#define XAO_CHAR_LIT     (XBEG XDOLLAR "'" CAPTURE("\\\\?.") "'" XEND)
+#define XAO_LIT          (XBEG XDOLLAR CAPTURE(XLIT) XEND)
+#define XAO_SYM          (XBEG XDOLLAR CAPTURE(XSYM) XEND)
+#define XAO_MEM_LIT      (XBEG CAPTURE(XLIT) XEND)
+#define XAO_MEM_CHAR_LIT (XBEG "'" CAPTURE("\\\\\?.") "'" XEND)
+#define XAO_MEM_SYM      (XBEG CAPTURE(XSYM) XEND)
+#define XAO_REG          (XBEG CAPTURE(XGPR) XEND)
+#define XAO_MEM_REG      (XBEG "\\[" XS CAPTURE(XGPR) XS "\\]" XEND)
+#define XAO_MEM_REG_LIT  (XBEG "\\[" XS CAPTURE(XGPR) XS "\\+" XS CAPTURE(XLIT) XS "\\]" XEND)
+#define XAO_MEM_REG_SYM  (XBEG "\\[" XS CAPTURE(XGPR) XS "\\+" XS CAPTURE(XSYM) XS "\\]" XEND)
+#define XAO_STR          (XBEG "\"" CAPTURE(XANY)  "\"" XEND)
 
 // Asm primitive types
 typedef char           Asm_Sbyte;
@@ -261,7 +285,7 @@ typedef enum {
 // Instruction information type
 typedef struct Asm_InstrInfo {
     char *i_name;
-    int i_instr_id;
+    int i_type;
     int i_op_code;
     int i_argc;
     int i_args_type;
@@ -300,7 +324,7 @@ typedef enum {
 // Directive info
 typedef struct {
     char *d_name;
-    int d_direc_id;
+    Asm_DirecType d_type;
     int d_args_type;
 } Asm_DirecInfo;
 
@@ -373,12 +397,14 @@ typedef struct {
 
 // Assembler flags
 typedef enum {
+    F_ASM_NONE  = 0,
     F_ASM_HEX   = 1,
     F_ASM_DEBUG = 2,
 } Asm_FlagsType;
 
 // Linker flags
 typedef enum {
+    F_LINKER_NONE  = 0,
     F_LINKER_HEX   = 1,
     F_LINKER_RELOC = 2,
     F_LINKER_DEBUG = 4,
@@ -391,5 +417,79 @@ typedef enum {
     F_EMU_TERMINAL = 2,
     F_EMU_DEBUG    = 4,
 } Emu_FlagsType;
+
+// Equ expression type
+typedef struct {
+    int ei_line;
+    char *ei_sym;
+    char *ei_expr;
+} Asm_EquType;
+
+// Equ element type
+typedef enum {
+    EE_OPERATOR,
+    EE_LITERAL,
+    EE_SYMBOL,
+    EE_VALUE,
+    EE_SYMLIT
+} Equ_ElemType;
+
+// Equ operator type
+typedef enum {
+    O_POS, // + a
+    O_NEG, // - a
+    O_ADD, // a + b
+    O_SUB, // a - b
+    O_MUL, // a * b
+    O_DIV, // a / b
+    O_MOD, // a % b
+    O_NOT, // ~ a
+    O_AND, // a & b
+    O_OR,  // a | b
+    O_XOR, // a ^ b
+    O_SHL, // a << b
+    O_SHR, // a >> b
+    O_LBR, // (
+    O_RBR  // )
+} Equ_OperType;
+
+// Equ operator associativity
+typedef enum {
+    O_ASOC_LTR,
+    O_ASOC_RTL,
+} Equ_OperAsoc;
+
+// Equ element information
+typedef struct {
+    Equ_ElemType ee_type;
+    union {
+        Asm_Word ee_value;
+        Equ_OperType ee_oper;
+    };
+} Equ_ElemInfo;
+
+// Equ operator information
+typedef struct {
+    char        *oi_name; // symbol
+    Equ_OperType oi_type; // operator
+    int          oi_prec; // precedence
+    int          oi_argc; // arity
+    Equ_OperAsoc oi_asoc; // associativity (RTL or LTR)
+} Equ_OperInfo;
+
+// Equ token type
+typedef enum {
+    TOK_OPERATOR,
+    TOK_SYMLIT
+} Equ_TokenType; 
+
+// Asm mode type
+typedef enum {
+    ASM_MODE_START,
+    ASM_MODE_RUNNING,
+    ASM_MODE_QUIT,
+    ASM_MODE_DONE
+} Asm_ModeType;
+
 
 #endif

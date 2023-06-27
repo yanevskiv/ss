@@ -1,7 +1,7 @@
-cd test
-ASSEMBLER=../assembler
-LINKER=../linker
-EMULATOR=../emulator
+cd test/nivo-a
+ASSEMBLER=../../assembler
+LINKER=../../linker
+EMULATOR=../../emulator
 
 ${ASSEMBLER} -o main.o main.s
 ${ASSEMBLER} -o math.o math.s

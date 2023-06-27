@@ -8,7 +8,7 @@
 # prekidna rutina za terminal
 .equ terminal_out, 0xFFFFFF00
 .equ terminal_in, 0xFFFFFF04
-.equ character_offset, 2
+.equ character_offset, 8
 .global isr_terminal
 isr_terminal:
     push %r1

@@ -1,10 +1,8 @@
 #ifndef _SS_ASEMBLER_H_
 #define _SS_ASEMBLER_H_
-
 #include "util.h"
 #include "types.h"
 #include "elf.h"
-
 
 // Find instruction / directive
 int Asm_FindInstrIdx(const char *instr);
@@ -14,6 +12,7 @@ int Asm_FindDirecIdx(const char *direct);
 Elf_Sym *Asm_AddLabel(Elf_Builder *elf, const char *label);
 Elf_Sym *Asm_AddAbsSymbol(Elf_Builder *elf, const char *name, Elf_Addr value);
 Elf_Rela *Asm_AddRela(Elf_Builder *elf, const char *symbol, Elf_Half type, Elf_Sxword addend);
+
 
 // Loading values into registers
 void Asm_PushXorZero(Elf_Builder *elf, Asm_RegType gprD);
@@ -79,14 +78,24 @@ void Asm_PushBgtSymbol(Elf_Builder *elf, Asm_RegType gpr1, Asm_RegType gpr2, con
 void Asm_PushCallSymbol(Elf_Builder *elf, const char *symName);
 
 // Parsing functions
+int Asm_SplitArgs(const char *str, int size, char **args);
 int Asm_ParseRegOperand(const char *str);
 int Asm_ParseCsrOperand(const char *str);
-int Asm_ExtractArguments(char *other, char **args, int max_args);
 Asm_OperandType *Asm_ParseDataOperand(const char *str);
 Asm_OperandType *Asm_ParseBranchOperand(const char *str);
 void Asm_OperandDestroy(Asm_OperandType *ao);
 
-// Compile flag
+// Equ expressions
+int Equ_FindOperIdxByType(Equ_OperType type);
+int Equ_FindOperIdxByName(const char *name);
+int Equ_CmpOperPrec(Equ_OperType op1, Equ_OperType op2);
+
+// Add instruction, directive or equ symbol
+int Asm_AddInstruction(Elf_Builder *elf, const char *instrName, const char *argsLine);
+int Asm_AddDirective(Elf_Builder *elf, const char *direcName, const char *argsLine);
+int Asm_AddEquSymbol(Elf_Builder *elf, const char *symName, const char *expression);
+
+// Compile file
 void Asm_Compile(Elf_Builder *elf, FILE *input, int flags);
 
 #endif /* _SS_ASEMBLER_H_ */ 

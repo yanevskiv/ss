@@ -10,8 +10,7 @@ isr_terminal:
     push %r2
 
     ld 0xFFFFFF04, %r1 # term_in
-    ld $121, %r2 # character_offset
-    probe %r1
+    ld $121, %r2 # character_offset ('y')
     bne %r1, %r2, skip
 
     ld $message_start, %r1

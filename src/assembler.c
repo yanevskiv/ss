@@ -9,7 +9,31 @@
 #include <stdarg.h>
 #include <util.h>
 
-regmatch_t matches[MAX_REGEX_MATCHES];
+// Show assembly error
+#define Show_AsmError(...)  \
+    do { \
+        if (Asm_LineNo > 0) { \
+            fprintf(stderr, "\e[31mError\e[0m: Line %d: ", Asm_LineNo); \
+        } else { \
+            fprintf(stderr, "\e[31mError\e[0m: "); \
+        } \
+        fprintf(stderr, __VA_ARGS__); \
+        fprintf(stderr, ":"); \
+        if (Asm_Line) { \
+            fprintf(stderr, "\n%s", Asm_Line); \
+        } \
+        fprintf(stderr, "\n"); \
+        fflush(stderr); \
+    } while (0)
+
+// Show equ error
+#define Show_EquError(...) \
+    do { \
+        fprintf(stderr, "\e[31mError\e[0m: Equ error: "); \
+        fprintf(stderr, __VA_ARGS__); \
+        fprintf(stderr, "\n"); \
+        fflush(stderr); \
+    } while (0)
 
 // List of instructions
 static Asm_InstrInfo Asm_InstrList[] = {
@@ -56,6 +80,44 @@ static Asm_DirecInfo Asm_DirecList[] = {
     { ".equ",     D_EQU,     D_ARGS_SYM_EQU  },
     { ".end",     D_END,     D_ARGS_NONE     },
 };
+
+
+// List of equ operators
+Equ_OperInfo Equ_OperList[] = {
+    // { "+",  O_POS, 2,  1 },
+    // { "-",  O_NEG, 2,  1 },
+    { "~",  O_NOT, 2,  1, O_ASOC_LTR },
+    { "*",  O_MUL, 3,  2, O_ASOC_LTR },
+    { "/",  O_DIV, 3,  2, O_ASOC_LTR },
+    { "%",  O_MOD, 3,  2, O_ASOC_LTR },
+    { "+",  O_ADD, 4,  2, O_ASOC_LTR },
+    { "-",  O_SUB, 4,  2, O_ASOC_LTR },
+    { "<<", O_SHL, 5,  2, O_ASOC_LTR },
+    { ">>", O_SHR, 5,  2, O_ASOC_LTR },
+    { "&",  O_AND, 8,  2, O_ASOC_LTR },
+    { "^",  O_XOR, 9,  2, O_ASOC_LTR },
+    { "|",  O_OR,  10, 2, O_ASOC_LTR },
+    { "(",  O_LBR, 15, 2, O_ASOC_LTR },
+    { ")",  O_RBR, 15, 2, O_ASOC_LTR },
+};
+
+// Equ count
+int Asm_EquCount = 0;
+
+// Equ list 
+Asm_EquType Asm_EquList[MAX_ASM_EQU];
+
+// Current line number
+int Asm_LineNo = 0;
+
+// Current line being parsed
+char *Asm_Line = NULL;
+
+// Current line capacity
+size_t Asm_LineCap = 0;
+
+// Current asm mode
+Asm_ModeType Asm_CurrentMode = ASM_MODE_START;
 
 // Find instruction
 int Asm_FindInstrIdx(const char *instr)
@@ -206,7 +268,7 @@ void Asm_PushInt(Elf_Builder *elf)
 
 // Push `iret` instruction
 // push status; push pc;
-void Asm_PushBasicIret(Elf_Builder *elf)
+static void Asm_PushBasicIret(Elf_Builder *elf)
 {
     // status <= mem32[SP]; SP <= SP + 4
     Elf_PushByte(elf, PACK(OC_LOAD, MOD_LOAD_7));
@@ -221,7 +283,7 @@ void Asm_PushBasicIret(Elf_Builder *elf)
     Elf_PushByte(elf, 0x04);
 }
 
-void Asm_PushExtendedIret(Elf_Builder *elf)
+static void Asm_PushExtendedIret(Elf_Builder *elf)
 {
     // Extended iret
     // idx <= mem32[SP]; SP <= SP + 4
@@ -529,12 +591,12 @@ void Asm_PushLoadReg(Elf_Builder *elf, Asm_RegType gprS, Asm_RegType gprD)
 // gprD <= mem32[gprS + disp]
 void Asm_PushLoadMemRegDisp(Elf_Builder *elf, Asm_RegType gprS, Asm_DispType disp, Asm_RegType gprD)
 {
-    // gprD <= 0
-    Asm_PushXorZero(elf, gprD);
+    // Zero out the IDX register
+    Asm_PushXorZero(elf, IDX);
 
-    // gprD <= mem32[gprD + gprS + disp]; (note: gprD = 0)
+    // gprD <= mem32[IDX + gprS + disp]; (note: IDX = 0)
     Elf_PushByte(elf, PACK(OC_LOAD, MOD_LOAD_2));
-    Elf_PushByte(elf, PACK(gprD, gprD));
+    Elf_PushByte(elf, PACK(gprD, IDX));
     Elf_PushByte(elf, PACK(gprS, disp >> 8));
     Elf_PushByte(elf, disp & 0xff);
 }
@@ -543,15 +605,15 @@ void Asm_PushLoadMemRegDisp(Elf_Builder *elf, Asm_RegType gprS, Asm_DispType dis
 // gprD <= gprS + symDisp
 void Asm_PushLoadMemRegSymbolDisp(Elf_Builder *elf, Asm_RegType gprS, const char *symName, Asm_RegType gprD)
 {
-    // Zero out the gprD register
+    // Zero out the IDX register
     Asm_PushXorZero(elf, gprD);
 
     // Add displacement relocation for next instruction
     Asm_AddRela(elf, symName, R_SS_D12, 0);
 
-    // gprD <= mem32[gprD + gprS + disp]
+    // gprD <= mem32[IDX + gprS + disp]; (Note: IDX = 0)
     Elf_PushByte(elf, PACK(OC_LOAD, MOD_LOAD_2));
-    Elf_PushByte(elf, PACK(gprD, gprD));
+    Elf_PushByte(elf, PACK(gprD, IDX));
     Elf_PushByte(elf, PACK(gprS, 0));
     Elf_PushByte(elf, 0);
 }
@@ -838,7 +900,7 @@ int Asm_ParseRegOperand(const char *str)
         return 15;
     } else if (Str_CheckMatch(str, "^%r([0-9]+)$"))  {
         int reg = strtol(str + 2, NULL, 10);
-        if (reg > 15)  {
+        if (reg >= GPR_COUNT)  {
             return -1;
         }
         return reg;
@@ -862,20 +924,6 @@ int Asm_ParseCsrOperand(const char *str)
     return -1;
 }
 
-// Extracts arguments and returns argc
-int Asm_ExtractArguments(char *other, char **args, int max_args)
-{
-    int argc = 0;
-    char *token = strtok(other, ",");
-    while (token) {
-        args[argc] = strdup(token);
-        Str_Trim(args[argc]);
-        argc += 1;
-        token = strtok(NULL, ",");
-    }
-    return argc;
-}
-
 // Parses symbols / literals / registers / reg offsets:
 // 1.  $literal
 // 2.  $symbol
@@ -887,55 +935,60 @@ int Asm_ExtractArguments(char *other, char **args, int max_args)
 // 8.  [ %reg + symbol ]
 Asm_OperandType *Asm_ParseDataOperand(const char *str)
 {
+    regmatch_t rm[MAX_REGEX_MATCHES];
     char *extract1 = NULL, *extract2 = NULL;
     Asm_OperandType *ao = calloc(1, sizeof(Asm_OperandType));
     assert(ao != NULL);
     ao->ao_type = AO_INVALID;
-    if (Str_RegexMatch(str, "^\\$'(\\\\?.)'$", ARR_SIZE(matches), matches)) {
-        extract1 = Str_Substr(str, matches[1].rm_so, matches[1].rm_eo);
+
+    // Find by regex
+    if (Str_RegexMatch(str, XAO_CHAR_LIT, ARR_SIZE(rm), rm)) {
+        extract1 = Str_Substr(str, rm[1].rm_so, rm[1].rm_eo);
         ao->ao_type = AO_LIT;
         ao->ao_lit = Str_UnescapeChar(extract1);
-    } else if (Str_RegexMatch(str, "^\\$([-+0-9a-fA-F][xXa-fA-F0-9]*)$", ARR_SIZE(matches), matches)) {
-        extract1 = Str_Substr(str, matches[1].rm_so, matches[1].rm_eo);
+    } else if (Str_RegexMatch(str, XAO_LIT, ARR_SIZE(rm), rm)) {
+        extract1 = Str_Substr(str, rm[1].rm_so, rm[1].rm_eo);
         ao->ao_type = AO_LIT;
         ao->ao_lit = Str_ParseInt(extract1);
-    } else if (Str_RegexMatch(str, "^\\$([_a-zA-Z][_a-zA-Z0-9]*)$", ARR_SIZE(matches), matches)) {
-        extract1 = Str_Substr(str, matches[1].rm_so, matches[1].rm_eo);
+    } else if (Str_RegexMatch(str, XAO_SYM, ARR_SIZE(rm), rm)) {
+        extract1 = Str_Substr(str, rm[1].rm_so, rm[1].rm_eo);
         ao->ao_type = AO_SYM;
         ao->ao_sym = strdup(extract1);
-    } else if (Str_RegexMatch(str, "^'(\\?.)'$", ARR_SIZE(matches), matches)) {
-        extract1 = Str_Substr(str, matches[1].rm_so, matches[1].rm_eo);
+    } else if (Str_RegexMatch(str, XAO_MEM_CHAR_LIT, ARR_SIZE(rm), rm)) {
+        extract1 = Str_Substr(str, rm[1].rm_so, rm[1].rm_eo);
         ao->ao_type = AO_MEM_LIT;
         ao->ao_lit = Str_UnescapeChar(extract1);
-    } else if (Str_RegexMatch(str, "^([-+0-9a-fA-F][xXa-fA-F0-9]*)$", ARR_SIZE(matches), matches)) {
-        extract1 = Str_Substr(str, matches[1].rm_so, matches[1].rm_eo);
+    } else if (Str_RegexMatch(str, XAO_MEM_LIT, ARR_SIZE(rm), rm)) {
+        extract1 = Str_Substr(str, rm[1].rm_so, rm[1].rm_eo);
         ao->ao_type = AO_MEM_LIT;
         ao->ao_lit = Str_ParseInt(extract1);
-    } else if (Str_RegexMatch(str, "^([_a-zA-Z][_a-zA-Z0-9]*)$", ARR_SIZE(matches), matches)) {
-        extract1 = Str_Substr(str, matches[1].rm_so, matches[1].rm_eo);
+    } else if (Str_RegexMatch(str, XAO_MEM_SYM, ARR_SIZE(rm), rm)) {
+        extract1 = Str_Substr(str, rm[1].rm_so, rm[1].rm_eo);
         ao->ao_type = AO_MEM_SYM;
         ao->ao_sym = strdup(extract1);
-    } else if (Str_RegexMatch(str, "^(%sp|%pc|%r[0-9]|%r1[0-5])$", ARR_SIZE(matches), matches)) {
-        extract1 = Str_Substr(str, matches[1].rm_so, matches[1].rm_eo);
+    } else if (Str_RegexMatch(str, XAO_REG, ARR_SIZE(rm), rm)) {
+        extract1 = Str_Substr(str, rm[1].rm_so, rm[1].rm_eo);
         ao->ao_type = AO_REG;
         ao->ao_reg = Asm_ParseRegOperand(extract1);
-    } else if (Str_RegexMatch(str, "^\\[[ \t]*(%sp|%pc|%r[0-9]|%r1[0-5])[ \t]*\\]$", ARR_SIZE(matches), matches)) {
-        extract1 = Str_Substr(str, matches[1].rm_so, matches[1].rm_eo);
+    } else if (Str_RegexMatch(str, XAO_MEM_REG, ARR_SIZE(rm), rm)) {
+        extract1 = Str_Substr(str, rm[1].rm_so, rm[1].rm_eo);
         ao->ao_type = AO_MEM_REG;
         ao->ao_reg = Asm_ParseRegOperand(extract1);
-    } else if (Str_RegexMatch(str, "^\\[[ \t]*(%sp|%pc|%r[0-9]|%r1[0-5])[ \t]*\\+[ \t]*([-+0-9a-fA-F][xXa-fA-F0-9]*)\\]$", ARR_SIZE(matches), matches)) {
-        extract1 = Str_Substr(str, matches[1].rm_so, matches[1].rm_eo);
-        extract2 = Str_Substr(str, matches[2].rm_so, matches[2].rm_eo);
+    } else if (Str_RegexMatch(str, XAO_MEM_REG_LIT, ARR_SIZE(rm), rm)) {
+        extract1 = Str_Substr(str, rm[1].rm_so, rm[1].rm_eo);
+        extract2 = Str_Substr(str, rm[2].rm_so, rm[2].rm_eo);
         ao->ao_type = AO_MEM_REG_LIT;
         ao->ao_reg = Asm_ParseRegOperand(extract1);
         ao->ao_lit = Str_ParseInt(extract2);
-    } else if (Str_RegexMatch(str, "^\\[[ \t]*(%sp|%pc|%r[0-9]|%r1[0-5])[ \t]*\\+[ \t]*([_a-zA-Z][_a-zA-Z0-9]*)\\]$", ARR_SIZE(matches), matches)) {
-        extract1 = Str_Substr(str, matches[1].rm_so, matches[1].rm_eo);
-        extract2 = Str_Substr(str, matches[2].rm_so, matches[2].rm_eo);
+    } else if (Str_RegexMatch(str, XAO_MEM_REG_SYM, ARR_SIZE(rm), rm)) {
+        extract1 = Str_Substr(str, rm[1].rm_so, rm[1].rm_eo);
+        extract2 = Str_Substr(str, rm[2].rm_so, rm[2].rm_eo);
         ao->ao_type = AO_MEM_REG_SYM;
         ao->ao_reg = Asm_ParseRegOperand(extract1);
         ao->ao_sym = strdup(extract2);
     }
+
+    // Free memory
     if (extract1)
         free(extract1);
     if (extract2)
@@ -948,20 +1001,21 @@ Asm_OperandType *Asm_ParseDataOperand(const char *str)
 // 2. symbol
 Asm_OperandType *Asm_ParseBranchOperand(const char *str)
 {
+    regmatch_t rm[MAX_REGEX_MATCHES];
     char *extract = NULL;
     Asm_OperandType *ao = calloc(1, sizeof(Asm_OperandType));
     assert(ao != NULL);
     ao->ao_type = AO_INVALID;
-    if (Str_RegexMatch(str, "^'(\\?.)'$", ARR_SIZE(matches), matches)) {
-        extract = Str_Substr(str, matches[1].rm_so, matches[1].rm_eo);
+    if (Str_RegexMatch(str, XAO_MEM_CHAR_LIT, ARR_SIZE(rm), rm)) {
+        extract = Str_Substr(str, rm[1].rm_so, rm[1].rm_eo);
         ao->ao_type = AO_LIT;
         ao->ao_lit = Str_UnescapeChar(extract);
-    } else if (Str_RegexMatch(str, "^([-+0-9a-fA-F][xX]?[a-f0-9A-F]*)$", ARR_SIZE(matches), matches)) {
-        extract = Str_Substr(str, matches[1].rm_so, matches[1].rm_eo);
+    } else if (Str_RegexMatch(str, XAO_MEM_LIT, ARR_SIZE(rm), rm)) {
+        extract = Str_Substr(str, rm[1].rm_so, rm[1].rm_eo);
         ao->ao_type = AO_LIT;
         ao->ao_lit = Str_ParseInt(extract);
-    } else if (Str_RegexMatch(str, "^([_a-zA-Z][_a-zA-Z0-9]*)$", ARR_SIZE(matches), matches)) {
-        extract = Str_Substr(str, matches[1].rm_so, matches[1].rm_eo);
+    } else if (Str_RegexMatch(str, XAO_MEM_SYM, ARR_SIZE(rm), rm)) {
+        extract = Str_Substr(str, rm[1].rm_so, rm[1].rm_eo);
         ao->ao_type = AO_SYM;
         ao->ao_sym = strdup(extract);
     } 
@@ -985,7 +1039,8 @@ void Asm_OperandDestroy(Asm_OperandType *ao)
     }
 }
 
-// Asm split args
+// Split arguments (string and comment sensitive)
+// Strings in the string array `args` must be `free()`'d manually
 int Asm_SplitArgs(const char *str, int size, char **args)
 {
     // Check empty
@@ -1057,674 +1112,975 @@ int Asm_SplitArgs(const char *str, int size, char **args)
         count += 1;
     }
     return count;
-    /*
-        Test
-        char *args[MAX_ASM_ARGS] = { 0 };
-        int i, argc = Asm_SplitArgs("   \t 432, 43242, \"fdsafdsa, fdsa\", fds # ffdsafdsa", ARR_SIZE(args), args);
-        printf("Count: %d\n", argc);
-        for (i = 0; i < argc; i++) {
-            printf("'%s'\n", args[i]);
+}
+
+// Find operator index by type
+int Equ_FindOperIdxByType(Equ_OperType type)
+{
+    int idx;
+    for (idx = 0; idx < ARR_SIZE(Equ_OperList); idx++) {
+        if (type == Equ_OperList[idx].oi_type)
+            return idx;
+    }
+    return -1;
+
+}
+
+// Find operator index by name
+int Equ_FindOperIdxByName(const char *name)
+{
+    int idx;
+    for (idx = 0; idx < ARR_SIZE(Equ_OperList); idx++) {
+        if (Str_Equals(Equ_OperList[idx].oi_name, name))
+            return idx;
+    }
+    return -1;
+}
+
+// prec(op1) <= prec(op2)
+int Equ_CmpOperPrec(Equ_OperType op1, Equ_OperType op2)
+{
+    int idx1 = Equ_FindOperIdxByType(op1);
+    int idx2 = Equ_FindOperIdxByType(op2);
+    if (idx1 != -1 && idx2 != -1) {
+        int prec1 = Equ_OperList[idx1].oi_prec ;
+        int prec2 = Equ_OperList[idx2].oi_prec;
+        return prec1 > prec2 ? 1 : prec1 < prec2 ? -1 : 0;
+    }
+    return -1;
+    
+}
+
+// Add absolute symbol through an expression
+int Asm_AddEquSymbol(Elf_Builder *elf, const char *symName, const char *expression)
+{
+    // Trim symName and expression
+    char *equSymName = strdup(symName);
+    char *equExpression = strdup(expression);
+    Str_Trim(equSymName);
+    Str_Trim(equExpression);
+
+    // Prepare error flag
+    int equError = FALSE;
+
+    // Parse expression
+    char *tokenList[MAX_EQU_TOKENS] = { 0 };
+    int tokenCount;
+    if ((tokenCount = Str_RegexSplit(equExpression, X_OPERATOR, ARR_SIZE(tokenList), tokenList)) == 0) {
+        Show_EquError("Empty expression");
+        equError = TRUE;
+    } else {
+        // Parsing the expression should produce code in reverse polish notation that can be then executed
+        Equ_ElemInfo codeStack[MAX_EQU_TOKENS];
+        int codeCount = 0;
+
+        // Operator stack for the Shunting-Yard algorithm
+        Equ_OperType operStack[MAX_EQU_TOKENS];
+        int operCount = 0;
+        
+        // Shunting-Yard algorithm
+        int tokenIdx;
+        for (tokenIdx = 0; tokenIdx < tokenCount && ! equError; tokenIdx++) {
+
+            // Fetch token and figure out its type
+            char *token = tokenList[tokenIdx];
+            Str_Trim(token);
+            if (Str_IsEmpty(token))
+                continue;
+            Equ_TokenType tokenType = Str_CheckMatch(token, X_OPERATOR) 
+                ? TOK_OPERATOR
+                : TOK_SYMLIT;
+
+            // Parse token
+            switch (tokenType) {
+                // Parse operator token
+                case TOK_OPERATOR:
+                {
+                    if (Str_Equals(token, "(")) {
+                        // Push O_LBR to the operator stack
+                        operStack[operCount] = O_LBR;
+                        operCount += 1;
+                    } else if (Str_Equals(token, ")")) {
+                        // Pop all operators up to O_LBR i.e. '(' to the code stack
+                        // If opening brace is not found it's a parsing error.
+                        int foundLBR = 0;
+                        while (operCount > 0 && ! foundLBR)  {
+                            Equ_OperType operPeek = operStack[operCount - 1];
+                            if (operPeek == O_LBR) {
+                                foundLBR = 1;
+                                operCount -= 1;
+                            } else {
+                                codeStack[codeCount].ee_type = EE_OPERATOR;
+                                codeStack[codeCount].ee_oper = operPeek;
+                                codeCount += 1;
+                                operCount -= 1;
+                            }
+                        }
+                        if (! foundLBR) {
+                            Show_EquError("Unmatched parenthesis");
+                            equError = TRUE;
+                        }
+                    } else {
+                        // Figure out which operator this ss
+                        int operIdx = Equ_FindOperIdxByName(token);
+                        if (operIdx == -1) {
+                            Show_EquError("Unknown operator '%s'", token);
+                            equError = TRUE;
+                        } else {
+                            // Fetch operator type
+                            Equ_OperType oper = Equ_OperList[operIdx].oi_type;
+
+                            // Pop all operators that are greater or equal precedence to this operator
+                            while (operCount > 0) {
+                                Equ_OperType operPeek = operStack[operCount - 1];
+                                if (Equ_CmpOperPrec(oper, operPeek) < 0) 
+                                    break;
+                                codeStack[codeCount].ee_type = EE_OPERATOR;
+                                codeStack[codeCount].ee_oper = operStack[operCount - 1];
+                                codeCount += 1;
+                                operCount -= 1;
+                            }
+
+                            // Push operator onto the operator stack
+                            operStack[operCount] = oper;
+                            operCount += 1;
+                        }
+                    }
+                } break;
+
+                // Parse symbol or literal
+                case TOK_SYMLIT:
+                {
+                    Asm_OperandType *ao = Asm_ParseBranchOperand(token);
+                    switch (ao->ao_type) {
+                        // Literal
+                        case AO_LIT:
+                        {
+                            // Push literal value to the code stack
+                            codeStack[codeCount].ee_type = EE_VALUE;
+                            codeStack[codeCount].ee_value = ao->ao_lit;
+                            codeCount += 1;
+                        } break;
+
+                        // Symbol
+                        case AO_SYM:
+                        {
+                            const char *symName = ao->ao_sym;
+                            int symError = TRUE;
+                            if (Elf_SymbolExists(elf, symName)) {
+                                Elf_Sym *sym = Elf_UseSymbol(elf, symName);
+                                if (sym->st_shndx != SHN_UNDEF) {
+                                    codeStack[codeCount].ee_type = EE_VALUE;
+                                    codeStack[codeCount].ee_value = sym->st_value;
+                                    codeCount += 1;
+                                    symError = FALSE;
+                                }
+                            }
+                            if (symError) {
+                                Show_EquError("Undefined symbol '%s'", symName);
+                                equError = TRUE;
+                            }
+                        } break;
+
+                        // Can't parse this token
+                        default: 
+                        {
+                            Show_EquError("Invalid expression '%s' (Cannot parse token '%s')\n", equExpression, token);
+                            equError = TRUE;
+                        } break;
+                    }
+                    Asm_OperandDestroy(ao);
+                } break;
+            }
         }
 
-    */
+        // Completely pop the operator stack onto the code stack
+        if (! equError) {
+            while (operCount > 0) {
+                Equ_OperType oper = operStack[operCount - 1];
+                if (oper == O_LBR || oper == O_RBR) {
+                    Show_EquError("Invalid expression '%s' (Unmatched parenthesis)", equExpression);
+                    equError = TRUE;
+                } else {
+                    codeStack[codeCount].ee_type = EE_OPERATOR;
+                    codeStack[codeCount].ee_oper = oper;
+                    codeCount += 1;
+                    operCount -= 1;
+                }
+            }
+        }
+
+        // Execute the code
+        Asm_Word wordStack[MAX_EQU_STACK];
+        int wordCount = 0;
+        int codeIdx = 0;
+        for (codeIdx = 0; codeIdx < codeCount && ! equError; codeIdx++) {
+            Equ_ElemInfo elem = codeStack[codeIdx];
+            switch (elem.ee_type) {
+                case EE_OPERATOR:
+                {
+                    // Fetch operator type and prepare result
+                    Equ_OperType operType = elem.ee_oper;
+                    Asm_Word result = 0x0;
+
+                    // Pop operator arguments from the stack
+                    Asm_Word arg[MAX_EQU_OPER_ARGS];
+                    int operIdx = Equ_FindOperIdxByType(operType);
+                    if (operIdx != -1)  {
+                        // Pop arguments
+                        int argCount = Equ_OperList[operIdx].oi_argc;
+                        Equ_OperAsoc asoc = Equ_OperList[operIdx].oi_asoc;
+                        if (argCount > wordCount) {
+                            // Stack underflow
+                            Show_EquError("Invalid expression '%s' (Operator error)", equExpression);
+                            equError = TRUE;
+                        } else {
+                            // Pop operator arguments
+                            if (asoc == O_ASOC_LTR) {
+                                int i;
+                                for (i = argCount - 1; i >= 0; i--) {
+                                    arg[i] = wordStack[wordCount - 1];
+                                    wordCount -= 1;
+                                }
+                            } else if (asoc == O_ASOC_RTL) {
+                                int i;
+                                for (i = 0; i < argCount; i++) {
+                                    arg[i] = wordStack[wordCount - 1];
+                                    wordCount -= 1;
+                                }
+                            }
+                        }
+                    }
+
+                    if (! equError) {
+                        // Execute operator
+                        switch (operType) {
+                            case O_ADD: {
+                                result = arg[0] + arg[1];
+                            } break;
+                            case O_SUB: {
+                                result = arg[0] - arg[1];
+                            } break;
+                            case O_MUL: {
+                                result = arg[0] * arg[1];
+                            } break;
+                            case O_DIV: {
+                                result = arg[0] / arg[1];
+                            } break;
+                            case O_MOD: {
+                                result = arg[0] % arg[1];
+                            } break;
+                            case O_NOT: {
+                                result = ~ arg[0];
+                            } break;
+                            case O_AND: {
+                                result = arg[0] & arg[1];
+                            } break;
+                            case O_OR: {
+                                result = arg[0] | arg[1];
+                            } break;
+                            case O_XOR: {
+                                result = arg[0] ^ arg[1];
+                            } break;
+                            case O_SHL: {
+                                result = arg[0] << arg[1];
+                            } break;
+                            case O_SHR: {
+                                result = arg[0] >> arg[1];
+                            } break;
+                            default: {
+                                Show_EquError("Invalid expression '%s' (invalid operator %d)", equExpression, operType);
+                                equError = TRUE;
+                            } break;
+                        }
+                        if (! equError) {
+                            // Push result onto the stack
+                            wordStack[wordCount] = result;
+                            wordCount += 1;
+                        }
+                    }
+                } break;
+
+                case EE_VALUE:
+                {
+                    // Push value onto the stack
+                    Asm_Word value = elem.ee_value;
+                    wordStack[wordCount] = value;
+                    wordCount += 1;
+                } break;
+            }
+        }
+
+        if (! equError) {
+            if (wordCount != 1) {
+                Show_EquError("Invalid expression '%s'. No result produced.", equExpression);
+                equError = TRUE;
+            } else {
+                // Pop result
+                Asm_Word result = wordStack[wordCount - 1];
+                wordCount -= 1;
+
+                // Add symbol to symbol table
+                Asm_AddAbsSymbol(elf, equSymName, result);
+            }
+        }
+    }
+    
+    // Free memory
+    int i;
+    for (i = 0; i < tokenCount; i++) {
+        if (tokenList[i])
+            free(tokenList[i]);
+    }
+    if (equSymName)
+        free(equSymName);
+    if (equExpression)
+        free(equExpression);
+    return ! equError;
 }
 
-// Check if string is an operator
-int Asm_IsOperator(const char *str)
+
+// Add a directive
+int Asm_AddDirective(Elf_Builder *elf, const char *direcName, const char *argsLine)
 {
-    char *ops[] = { "+" };
+    // Find directive information
+    int direcError = FALSE;
+    int idx = Asm_FindDirecIdx(direcName);
+    if (idx == -1) {
+        Show_AsmError("Invalid directive '%s'", direcName);
+        direcError = TRUE;
+    }
+    if (direcError)
+        return 0;
+    Asm_DirecType direcType = Asm_DirecList[idx].d_type;
+
+    // Split directive arguments
+    char *args[MAX_ASM_ARGS] = { 0 };
+    int argCount = Asm_SplitArgs(argsLine, ARR_SIZE(args), args);
+
+    // Parse directive
+    switch (direcType) {
+        // .extern
+        // .global
+        case D_EXTERN:
+        case D_GLOBAL:
+        {
+            int i;
+            for (i = 0; i < argCount; i++) {
+                Elf_Sym *sym = Elf_UseSymbol(elf, args[i]);
+                sym->st_info = ELF_ST_INFO(STB_GLOBAL, ELF_ST_TYPE(sym->st_info));
+            }
+        } break;
+
+        // .section name
+        case D_SECTION:
+        {
+            // .section name
+            if (argCount == 1) {
+                Elf_UseSection(elf, args[0]);
+            } else {
+                Show_AsmError("'%s' directive requires exactly 1 argument", direcName);
+            }
+        } break;
+
+        // .byte
+        // .half
+        // .word
+        case D_BYTE:
+        case D_HALF:
+        case D_WORD:
+        {
+            // .byte lit|sym, ...
+            // .half lit|sym, ...
+            // .word lit|sym, ...
+            int i;
+            for (i = 0; i < argCount; i++) {
+                Asm_OperandType *ao = Asm_ParseBranchOperand(args[i]);
+                if (ao->ao_type == AO_SYM) {
+                    int relaType = 
+                          direcType == D_BYTE ? R_SS_8
+                        : direcType == D_HALF ? R_SS_16
+                        : direcType == D_WORD ? R_SS_32
+                        : R_SS_NONE;
+                    Asm_AddRela(elf, args[i], relaType, 0);
+                    Elf_PushWord(elf, 0);
+                } else if (ao->ao_type == AO_LIT) {
+                    if (direcType == D_WORD) 
+                        Elf_PushWord(elf, ao->ao_lit);
+                    else if (direcType == D_HALF) 
+                        Elf_PushHalf(elf, ao->ao_lit);
+                    else if (direcType == D_BYTE) 
+                        Elf_PushByte(elf, ao->ao_lit);
+                } else if (ao->ao_type == AO_INVALID) {
+                    Show_AsmError("Invalid symbol '%s'", args[i]);
+                }
+                Asm_OperandDestroy(ao);
+            }
+        } break;
+
+        // .skip num
+        case D_SKIP:
+        {
+            if (argCount == 1) {
+                int value = Str_ParseInt(args[0]);
+                Elf_PushSkip(elf, value, 0x00);
+            } else {
+                Show_Error("'%s' directive requires exactly 1 argument", direcName);
+            }
+        } break;
+
+        // .ascii str
+        case D_ASCII:
+        {
+            if (argCount == 1)  {
+                Str_RmQuotes(args[0]);
+                Str_UnescapeStr(args[0]);
+                Elf_PushString(elf, args[0]);
+            } else {
+                Show_Error("'%s' directive requires exactly 2 arguments", direcName);
+            }
+        } break;
+
+        // .equ sym, expr
+        case D_EQU:
+        {
+            if (argCount == 2) {
+                Asm_EquType equ = {
+                    .ei_line = Asm_LineNo,
+                    .ei_sym = strdup(args[0]),
+                    .ei_expr = strdup(args[1])
+                };
+                Asm_EquList[Asm_EquCount] = equ;
+                Asm_EquCount += 1;
+                //const char *symName = args[0];
+                //Asm_Word value = Str_ParseInt(args[1]);
+                //Asm_AddAbsSymbol(elf, symName, value);
+            } else {
+                Show_AsmError("'%s' directive requires exactly 2 arguments", direcName);
+            }
+        } break;
+
+        // .end
+        case D_END:
+        {
+            Asm_CurrentMode = ASM_MODE_QUIT;
+        } break;
+    }
+
+    // Free memory
+    for (int i = 0; i < argCount; i++) {
+        if (args[i])
+            free(args[i]);
+    }
+
+    return ! direcError;
 }
 
-// Push directive
-void Asm_PushDirective(Elf_Builder *elf, const char *direc, const char *argsLine)
+// Add an instruction
+int Asm_AddInstruction(Elf_Builder *elf, const char *instrName, const char *argsLine)
 {
-}
+    // Find instruction information
+    int instrError = FALSE;
+    int idx = Asm_FindInstrIdx(instrName);
+    if (idx == -1) {
+        Show_AsmError("Invalid instruction '%s'", instrName);
+        instrError = TRUE;
+    }
+    if (instrError)
+        return 0;
+    Asm_InstrType instrType = Asm_InstrList[idx].i_type;
 
-// Push instruction
-void Asm_PushInstruction(Elf_Builder *elf, const char *instr, const char *argsLine)
-{
+    // Split instruction arguments 
+    char *args[MAX_ASM_ARGS] = { 0 };
+    int argCount = Asm_SplitArgs(argsLine, ARR_SIZE(args), args);
+
+    // Check if the number of arguments given are proper
+    int argNeeded = Asm_InstrList[idx].i_argc;
+    if (argCount != argNeeded) {
+        Show_AsmError("Instruction '%s' requires exactly %d arguments", instrName, argNeeded);
+        instrError = TRUE;
+    }
+
+    
+    // Extract necessary information from the arguments 
+    // depending on the instruction arguments format
+    //   gprS - source register
+    //   gprD - destination register; also used when there is only 1 REG argument.
+    //   csr  - status/handler/cause
+    //   ao   - operand (branch / data)
+    Asm_RegType gprS = NOREG;
+    Asm_RegType gprD = NOREG;
+    Asm_RegType csr  = NOREG;
+    Asm_OperandType *ao = NULL;
+    if (! instrError) {
+        int argsType = Asm_InstrList[idx].i_args_type;
+
+        switch (argsType) {
+            default: {
+                // DO NOTHING
+            } break;
+
+            case I_ARGS_BOP: {
+                ao = Asm_ParseBranchOperand(args[0]);
+                if (ao->ao_type == AO_INVALID) {
+                    instrError = TRUE;
+                }
+            } break;
+
+            case I_ARGS_REG_REG_BOP: {
+                gprS = Asm_ParseRegOperand(args[0]);
+                gprD = Asm_ParseRegOperand(args[1]);
+                ao = Asm_ParseBranchOperand(args[2]);
+                if (gprS == -1 || gprD == -1 || ao->ao_type == AO_INVALID)  {
+                    instrError = TRUE;
+                }
+            } break;
+
+            case I_ARGS_REG_REG: {
+                gprS = Asm_ParseRegOperand(args[0]);
+                gprD = Asm_ParseRegOperand(args[1]);
+                if (gprS == -1 || gprD == -1)  {
+                    instrError = TRUE;
+                }
+            } break;
+
+            case I_ARGS_REG: {
+                gprD = Asm_ParseRegOperand(args[0]);
+                if (gprD == -1)  {
+                    instrError = TRUE;
+                }
+            } break;
+
+            case I_ARGS_DOP_REG: {
+                ao = Asm_ParseDataOperand(args[0]);
+                gprD = Asm_ParseRegOperand(args[1]);
+                if (gprD == -1 || ao->ao_type == AO_INVALID) {
+                    instrError = TRUE;
+                }
+            } break;
+
+            case I_ARGS_REG_DOP: {
+                gprS = Asm_ParseRegOperand(args[0]);
+                ao = Asm_ParseDataOperand(args[1]);
+                if (gprS == -1 || ao->ao_type == AO_INVALID) {
+                    instrError = TRUE;
+                }
+            } break;
+
+            case I_ARGS_CSR_REG: {
+                csr = Asm_ParseCsrOperand(args[0]);
+                gprD = Asm_ParseRegOperand(args[1]);
+                if (csr == -1 || gprD == -1) {
+                    instrError = TRUE;
+                }
+            } break;
+
+            case I_ARGS_REG_CSR: {
+                gprS = Asm_ParseRegOperand(args[0]);
+                csr = Asm_ParseCsrOperand(args[1]);
+                if (csr == -1 || gprS == -1) {
+                    instrError = TRUE;
+                }
+            } break;
+
+            case I_ARGS_DOP: {
+                ao = Asm_ParseDataOperand(args[0]);
+                if (ao->ao_type == AO_INVALID) {
+                    instrError = TRUE;
+                }
+            } break;
+        }
+        if (instrError) {
+            Show_AsmError("Invalid arguments for instruction '%s'", instrName);
+        }
+    }
+
+     // Parse instructions
+     // [x] halt
+     // [x] int
+     // [x] iret
+     // [x] call
+     // [x] ret
+     // [x] jmp
+     // [x] beq
+     // [x] bne
+     // [x] bgt
+     // [x] push
+     // [x] pop
+     // [x] xchg
+     // [x] add
+     // [x] sub
+     // [x] mul
+     // [x] div
+     // [x] not
+     // [x] and 
+     // [x] or
+     // [x] xor
+     // [x] shl
+     // [x] shr
+     // [x] ld
+     // [x] st
+     // [x] csrrd
+     // [x] csrwr
+     // [x] probe
+    if (! instrError) {
+        int opCode = Asm_InstrList[idx].i_op_code;
+        int instrType = Asm_InstrList[idx].i_type;
+        switch (instrType) {
+            // Unknown instruction
+            default: {
+                Show_AsmError("Unknown instruction '%s'", instrName);
+            } break;
+
+            // Halt instruction
+            case I_HALT: {
+                Asm_PushHalt(elf);
+            } break;
+
+            // Software interrupt
+            case I_INT: {
+                Asm_PushInt(elf);
+            } break;
+
+            // Return from interrupt routine
+            case I_IRET: {
+                Asm_PushIret(elf);
+            } break;
+
+            // jmp instruction
+            case I_JMP: {
+                switch (ao->ao_type) {
+                    // jmp lit
+                    case AO_LIT: {
+                        Asm_PushJmpLiteral(elf, ao->ao_lit);
+                    } break;
+
+                    // jmp sym
+                    case AO_SYM: {
+                        Asm_PushJmpSymbol(elf, ao->ao_sym);
+                    } break;
+                } 
+            } break;
+
+            // beq instruction
+            case I_BEQ: {
+                switch (ao->ao_type) {
+                    // beq lit
+                    case AO_LIT: {
+                        Asm_PushBeqLiteral(elf, gprS, gprD, ao->ao_lit);
+                    } break;
+
+                    // beq sym
+                    case AO_SYM: {
+                        Asm_PushBeqSymbol(elf, gprS, gprD, ao->ao_sym);
+                    } break;
+                } 
+            } break;
+
+            // bne instruction
+            case I_BNE: {
+                switch (ao->ao_type) {
+                    // bne lit
+                    case AO_LIT: {
+                        Asm_PushBneLiteral(elf, gprS, gprD, ao->ao_lit);
+                    } break;
+
+                    // bne sym
+                    case AO_SYM: {
+                        Asm_PushBneSymbol(elf, gprS, gprD, ao->ao_sym);
+                    } break;
+                } 
+            } break;
+
+            // bgt instruction
+            case I_BGT: {
+                switch (ao->ao_type) {
+                    // bgt lit
+                    case AO_LIT: {
+                        Asm_PushBgtLiteral(elf, gprS, gprD, ao->ao_lit);
+                    } break;
+
+                    // bgt sym
+                    case AO_SYM: {
+                        Asm_PushBgtSymbol(elf, gprS, gprD, ao->ao_sym);
+                    } break;
+                } 
+            } break;
+
+            // call instruction
+            case I_CALL: {
+                switch (ao->ao_type) {
+                    // call lit
+                    case AO_LIT: {
+                        Asm_PushCallLiteral(elf, ao->ao_lit);
+                    } break;
+
+                    // call sym
+                    case AO_SYM: {
+                        Asm_PushCallSymbol(elf, ao->ao_sym);
+                    } break;
+                } 
+            } break;
+
+
+            // ret
+            case I_RET: {
+                Asm_PushRet(elf);
+            } break;
+
+            // push %gprD
+            case I_PUSH: {
+                Asm_PushStackPush(elf, gprD);
+            } break;
+
+            // pop %gprD
+            case I_POP: {
+                Asm_PushStackPop(elf, gprD);
+            } break;
+
+            // xchg %gprS, %gprD
+            case I_XCHG: {
+                Asm_PushXchg(elf, gprS, gprD);
+            } break;
+
+            // not %gprD
+            case I_NOT: {
+                Asm_PushNot(elf, gprD);
+            } break;
+
+            // ALU instructions
+            // alu %gprS, %gprD
+            case I_ADD:
+            case I_SUB:
+            case I_MUL:
+            case I_DIV:
+            case I_AND:
+            case I_OR:
+            case I_XOR:
+            {
+                Asm_PushALU(elf, opCode, gprS, gprD);
+            } break;
+
+            // Load instruction
+            case I_LD: {
+                switch (ao->ao_type) {
+                    // ld $lit, %gprD
+                    case AO_LIT: {
+                        Asm_PushLoadLiteralValue(elf, ao->ao_lit, gprD);
+                    } break;
+
+                    // ld $sym, %gprD
+                    case AO_SYM: {
+                        Asm_PushLoadSymbolValue(elf, ao->ao_sym, gprD);
+                    } break;
+
+                    // ld lit, %gprD
+                    case AO_MEM_LIT: {
+                        Asm_PushLoadMemLiteralValue(elf, ao->ao_lit, gprD);
+                    } break;
+
+                    // ld sym, %gprD
+                    case AO_MEM_SYM: {
+                        Asm_PushLoadMemSymbolValue(elf, ao->ao_sym, gprD);
+                    } break;
+
+                    // ld %reg, %gprD
+                    case AO_REG: {
+                        Asm_PushLoadReg(elf, ao->ao_reg, gprD);
+                    } break;
+
+                    // ld [%gprS], %gprD
+                    case AO_MEM_REG: {
+                        Asm_PushLoadMemRegDisp(elf, ao->ao_reg, 0, gprD);
+                    } break;
+
+                    // ld [%gprS + lit], %gprD
+                    case AO_MEM_REG_LIT: {
+                        Asm_PushLoadMemRegDisp(elf, ao->ao_reg, ao->ao_lit, gprD);
+                    } break;
+
+                    // ld [%gprS + sym], %gprD
+                    case AO_MEM_REG_SYM: {
+                        Asm_PushLoadMemRegSymbolDisp(elf, ao->ao_reg, ao->ao_sym, gprD);
+                    } break;
+                }
+            } break;
+
+            // Store instruction
+            case I_ST: {
+                switch (ao->ao_type) {
+                    // st %gprS, $lit
+                    case AO_LIT: {
+                        Asm_PushStoreMemAddr(elf, gprS, ao->ao_lit);
+                    } break;
+
+                    // st %gprS, $sym
+                    case AO_SYM: {
+                        Asm_PushStoreSymbolMemAddr(elf, gprS, ao->ao_sym);
+                    } break;
+
+                    // st %gprS, lit
+                    case AO_MEM_LIT: {
+                        Asm_PushStoreAddr(elf, gprS, ao->ao_lit);
+                    } break;
+
+                    // st %gprS, sym
+                    case AO_MEM_SYM: {
+                        Asm_PushStoreSymbolAddr(elf, gprS, ao->ao_sym);
+                    } break;
+
+                    // st %gprS, %gprD
+                    case AO_REG: {
+                        Asm_PushStoreReg(elf, gprS, ao->ao_reg);
+                    } break;
+
+                    // st %gprS, [%gprD]
+                    case AO_MEM_REG: {
+                        Asm_PushStoreMemRegDisp(elf, gprS, ao->ao_reg, 0);
+                    } break;
+
+                    // st %gprS, [%gprD + lit]
+                    case AO_MEM_REG_LIT: {
+                        Asm_PushStoreMemRegDisp(elf, gprS, ao->ao_reg, ao->ao_lit);
+                    } break;
+
+                    // st %gprS, [%gprD + sym]
+                    case AO_MEM_REG_SYM: {
+                        Asm_PushStoreMemRegSymbolDisp(elf, gprS, ao->ao_reg, ao->ao_sym);
+                    } break;
+                }
+            } break;
+
+            case I_PROBE: {
+                switch (ao->ao_type) {
+                    // probe $lit
+                    case AO_MEM_LIT:
+                    case AO_LIT: {
+                        Asm_PushProbeLit(elf, ao->ao_lit);
+                    } break;
+
+                    // probe %reg
+                    case AO_REG: {
+                        Asm_PushProbeReg(elf, ao->ao_reg);
+                    } break;
+
+                    // probe [%reg]
+                    case AO_MEM_REG: {
+                        Asm_PushProbeMemRegDisp(elf, ao->ao_reg, 0);
+                    } break;
+
+                    // probe [%reg + disp]
+                    case AO_MEM_REG_LIT: {
+                        Asm_PushProbeMemRegDisp(elf, ao->ao_reg, ao->ao_lit);
+                    } break;
+
+                    // probe all
+                    case AO_MEM_SYM: {
+                        if (Str_Equals(ao->ao_sym, "all")) {
+                            Asm_PushProbeAll(elf);
+                        } else {
+                            Show_AsmError("Unknown option '%s' for instruction '%s'", ao->ao_sym, instrName);
+                        }
+                    } break;
+                }
+            } break;
+
+            // csrrd %csr, %gprD
+            case I_CSRRD: {
+                Asm_PushCsrrd(elf, csr, gprD);
+            } break;
+
+            // csrwr %gprS, %csr
+            case I_CSRWR: {
+                Asm_PushCsrwr(elf, gprS, csr);
+            } break;
+        }
+    }
+
+    //Free memory
+    if (ao) {
+        Asm_OperandDestroy(ao);
+    }
+    for (int i = 0; i < argCount; i++) {
+        if (args[i])
+            free(args[i]);
+    }
+    
+    return ! instrError;
 }
 
 // Compile assembly into ELF
 void Asm_Compile(Elf_Builder *elf, FILE *input, int flags)
 {
-    enum {
-        MODE_OK,
-        MODE_QUIT
-    };
-    int linenum = 0;
     int nread = 0;
-    int mode = MODE_OK;
-    ssize_t linelen;
-    char *line = NULL;  // Whole line
+    regmatch_t rm[MAX_REGEX_MATCHES];
 
-    // Equ expression type
-    typedef struct {
-        int ei_line;
-        char *ei_sym;
-        char *ei_expr;
-    } Asm_EquType;
+    // Prepare variables
+    Asm_Line = NULL;
+    Asm_LineNo = 0;
+    Asm_LineCap = 0;
+    Asm_EquCount = 0;
+    Asm_CurrentMode = ASM_MODE_RUNNING;
 
-    // Equ expressions
-    int Asm_EquCount = 0;
-    Asm_EquType Asm_EquList[MAX_ASM_EQU];
-
-    while (mode != MODE_QUIT && (nread = getline(&line, &linelen, input)) != -1) {
+    // Start assembling
+    while (Asm_CurrentMode != ASM_MODE_QUIT && (nread = getline(&Asm_Line, &Asm_LineCap, input)) != -1) {
         //  Read line
-        linenum += 1;
-        line[strlen(line) - 1] = '\0';
+        Asm_LineNo += 1;
+        Asm_Line[strlen(Asm_Line) - 1] = '\0';
         char *label = NULL; // Label
         char *instr = NULL; // Instruction
         char *direc = NULL; // Directive
         char *other = NULL; // Arguments
-        char *linebuf = strdup(line);
 
-        // Extracted arguments (separated by ,)
-        int argc = 0;
-        char *args[MAX_ASM_ARGS];
-        
-        
+        // Duplicate line so that we may cut it
+        char *linebuf = strdup(Asm_Line);
+
         do {
             // Skip comments and empty lines
-            if (Str_RegexMatch(linebuf, "^[ \t]*$", ARR_SIZE(matches), matches))
+            if (Str_CheckMatch(Asm_Line, X_EMPTY_LINE))
                 continue;
-            if (Str_RegexMatch(linebuf, "^[ \t]*#.*$", ARR_SIZE(matches), matches))
+            if (Str_CheckMatch(Asm_Line, X_COMMENT_LINE))
                 continue;
 
-            
-            // Remove comments and extract label
-            if (Str_RegexMatch(linebuf, "^[ \t]*([^:]*)[ \t]*:(.*)$", ARR_SIZE(matches), matches))  {
+            // Extract label
+            if (Str_RegexMatch(linebuf, X_EXTRACT_LABEL, ARR_SIZE(rm), rm))  {
                 // Extract label
-                label = Str_Substr(linebuf, matches[1].rm_so, matches[1].rm_eo);
-                other = Str_Substr(linebuf, matches[2].rm_so, matches[2].rm_eo);
+                label = Str_Substr(linebuf, rm[1].rm_so, rm[1].rm_eo);
+                other = Str_Substr(linebuf, rm[2].rm_so, rm[2].rm_eo);
 
-                // Cut line
-                free(linebuf);
-                linebuf = other;
+                // Cut out label from the line
+                Str_Cut(&linebuf, rm[1].rm_so, rm[1].rm_eo);
             }
 
             // Handle label
             if (label) {
-                // Equivalent to `Asm_AddLabel()` with checks to whether the symbol exists already
+                // Equivalent to `Asm_AddLabel()` with checks to whether the symbol already exists
                 Elf_Sym *sym = Elf_UseSymbol(elf, label);
                 if (sym->st_shndx == SHN_UNDEF)  {
                     sym->st_value = Elf_GetSectionSize(elf);
                     sym->st_shndx = Elf_GetCurrentSection(elf);
                 } else if (sym->st_value != Elf_GetSectionSize(elf)) {
-                   Show_Error("Line %d: Multiple symbol definitions with name '%s'", linenum, label, line);
+                   Show_AsmError("Multiple symbol definitions with name '%s'", label);
                 }
             }
 
-
-            // If directive
-            if (Str_RegexMatch(linebuf, "^[ \t]*(\\.[a-zA_Z0-9]+)[ \t]*(.*)[ \t]*(.*)$", ARR_SIZE(matches), matches) > 0) {
-                // Extaract directive and directive arguments, remove comments
-                direc = Str_Substr(linebuf, matches[1].rm_so, matches[1].rm_eo);
-                other = Str_Substr(linebuf, matches[2].rm_so, matches[2].rm_eo);
-                if (Str_RegexMatch(other, "(#.*)$", ARR_SIZE(matches), matches)) {
-                    Str_Cut(&other, matches[1].rm_so, matches[1].rm_eo);
-                }
-
-                // Find directive
-                int isOk = TRUE;
-                int idx = Asm_FindDirecIdx(direc);
-                if (idx == -1) {
-                    Show_Error("Line %d: Invalid directive '%s':\n %s", linenum, direc, line);
-                    isOk = FALSE;
-                }
-
-                // Extract directive argumetns and check validity
-                if (isOk)  {
-                    argc = Asm_ExtractArguments(other, args, ARR_SIZE(args));
-                    // TODO: Check arguments
-                }
-
-                // Parse directives
-                if (isOk) {
-                    int direcId = Asm_DirecList[idx].d_direc_id;
-                    switch (direcId) {
-                        // .extern
-                        // .global
-                        case D_EXTERN:
-                        case D_GLOBAL:
-                        {
-                            int i;
-                            for (i = 0; i < argc; i++) {
-                                Elf_Sym *sym = Elf_UseSymbol(elf, args[i]);
-                                sym->st_info = ELF_ST_INFO(STB_GLOBAL, ELF_ST_TYPE(sym->st_info));
-                            }
-                        } break;
-
-                        // .section name
-                        case D_SECTION:
-                        {
-                            // .section name
-                            if (argc == 1) {
-                                Elf_UseSection(elf, args[0]);
-                            } else {
-                                Show_Error("Line %d: '%s' directive requires exactly 1 argument:\n %s", linenum, direc, line);
-                            }
-                        } break;
-
-                        // .byte
-                        // .half
-                        // .word
-                        case D_BYTE:
-                        case D_HALF:
-                        case D_WORD:
-                        {
-                            // .byte lit|sym, ...
-                            // .half lit|sym, ...
-                            // .word lit|sym, ...
-                            int i;
-                            for (i = 0; i < argc; i++) {
-                                Asm_OperandType *ao = Asm_ParseBranchOperand(args[i]);
-                                if (ao->ao_type == AO_SYM) {
-                                    int relaType = 
-                                          direcId == D_BYTE ? R_SS_8
-                                        : direcId == D_HALF ? R_SS_16
-                                        : direcId == D_WORD ? R_SS_32
-                                        : R_SS_NONE;
-                                    Asm_AddRela(elf, args[i], relaType, 0);
-                                    Elf_PushWord(elf, 0);
-                                } else if (ao->ao_type == AO_LIT) {
-                                    if (direcId == D_WORD) 
-                                        Elf_PushWord(elf, ao->ao_lit);
-                                    else if (direcId == D_HALF) 
-                                        Elf_PushHalf(elf, ao->ao_lit);
-                                    else if (direcId == D_BYTE) 
-                                        Elf_PushByte(elf, ao->ao_lit);
-                                } else if (ao->ao_type == AO_INVALID) {
-                                    Show_Error("Line %d: Invalid symbol '%s':\n %s", linenum, args[i], line);
-                                }
-                                Asm_OperandDestroy(ao);
-                            }
-                        } break;
-
-                        // .skip num
-                        case D_SKIP:
-                        {
-                            if (argc == 1) {
-                                int value = Str_ParseInt(args[0]);
-                                Elf_PushSkip(elf, value, 0x00);
-                            } else {
-                                Show_Error("Line %d: '%s' directive requires exactly 1 argument:\n %s", linenum, direc, line);
-                            }
-                        } break;
-
-                        // .ascii str
-                        case D_ASCII:
-                        {
-                            if (argc == 1)  {
-                                Str_RmQuotes(args[0]);
-                                Str_UnescapeStr(args[0]);
-                                Elf_PushString(elf, args[0]);
-                            } else {
-                                Show_Error("Line %d: '%s' directive requires exactly 2 arguments:\n %s", linenum, direc, line);
-                            }
-                        } break;
-
-                        // .equ sym, expr
-                        case D_EQU:
-                        {
-                            if (argc == 2) {
-                                Asm_EquType equ = {
-                                    .ei_line = linenum,
-                                    .ei_sym = strdup(args[0]),
-                                    .ei_expr = strdup(args[1])
-                                };
-                                Asm_EquList[Asm_EquCount] = equ;
-                                Asm_EquCount += 1;
-                                //const char *symName = args[0];
-                                //Asm_Word value = Str_ParseInt(args[1]);
-                                //Asm_AddAbsSymbol(elf, symName, value);
-                            } else {
-                                Show_Error("Line %d: '%s' directive requires exactly 2 arguments:\n %s", linenum, direc, line);
-                            }
-                        } break;
-
-                        // .end
-                        case D_END:
-                        {
-                            mode = MODE_QUIT;
-                        } break;
-                    }
-                }
-
-            } else if (Str_RegexMatch(linebuf, "^[ \t]*([a-zA-Z0-9]+)[ \t]*(.*)[ \t]*$", ARR_SIZE(matches), matches)) {
-                // Extract instruction, arguments and remove comments
-                instr = Str_Substr(linebuf, matches[1].rm_so, matches[1].rm_eo);
-                other = Str_Substr(linebuf, matches[2].rm_so, matches[2].rm_eo);
-                if (Str_RegexMatch(other, "(#.*)$", ARR_SIZE(matches), matches)) {
-                    Str_Cut(&other, matches[1].rm_so, matches[1].rm_eo);
-                }
-                argc = Asm_ExtractArguments(other, args, ARR_SIZE(args));
-
-                
-                // Find instruction index in the ISA map
-                int opOK = TRUE;
-                int idx = Asm_FindInstrIdx(instr);
-                if (idx == -1)  {
-                    Show_Error("Line %d: Invalid instruction '%s':\n %s", linenum, instr, line);
-                    opOK = FALSE;
-                }
-
-                // Check if the number of arguments given are proper
-                if (opOK) {
-                    int argcNeeded = Asm_InstrList[idx].i_argc;
-                    if (argc != argcNeeded) {
-                        Show_Error("Line %d: Instruction '%s' requires exactly %d argument:\n %s", linenum, instr, argcNeeded, line);
-                        opOK = FALSE;
-                    }
-                }
-
-                /*
-                 * Extract necessary information from the arguments 
-                 * depending on the instruction arguments format
-                 *   gprS - source register
-                 *   gprD - destination register; also used when there is only 1 REG argument.
-                 *   csr  - status/handler/cause
-                 *   ao   - operand (branch / data)
-                 */
-                Asm_RegType gprS = NOREG;
-                Asm_RegType gprD = NOREG;
-                Asm_RegType csr  = NOREG;
-                Asm_OperandType *ao = NULL;
-                if (opOK) {
-                    int argsType = Asm_InstrList[idx].i_args_type;
-
-                    switch (argsType) {
-                        default: {
-                            // DO NOTHING
-                        } break;
-
-                        case I_ARGS_BOP: {
-                            ao = Asm_ParseBranchOperand(args[0]);
-                            if (ao->ao_type == AO_INVALID) {
-                                opOK = FALSE;
-                            }
-                        } break;
-
-                        case I_ARGS_REG_REG_BOP: {
-                            gprS = Asm_ParseRegOperand(args[0]);
-                            gprD = Asm_ParseRegOperand(args[1]);
-                            ao = Asm_ParseBranchOperand(args[2]);
-                            if (gprS == -1 || gprD == -1 || ao->ao_type == AO_INVALID)  {
-                                opOK = FALSE;
-                            }
-                        } break;
-
-                        case I_ARGS_REG_REG: {
-                            gprS = Asm_ParseRegOperand(args[0]);
-                            gprD = Asm_ParseRegOperand(args[1]);
-                            if (gprS == -1 || gprD == -1)  {
-                                opOK = FALSE;
-                            }
-                        } break;
-
-                        case I_ARGS_REG: {
-                            gprD = Asm_ParseRegOperand(args[0]);
-                            if (gprD == -1)  {
-                                opOK = FALSE;
-                            }
-                        } break;
-
-                        case I_ARGS_DOP_REG: {
-                            ao = Asm_ParseDataOperand(args[0]);
-                            gprD = Asm_ParseRegOperand(args[1]);
-                            if (gprD == -1 || ao->ao_type == AO_INVALID) {
-                                opOK = FALSE;
-                            }
-                        } break;
-
-                        case I_ARGS_REG_DOP: {
-                            gprS = Asm_ParseRegOperand(args[0]);
-                            ao = Asm_ParseDataOperand(args[1]);
-                            if (gprS == -1 || ao->ao_type == AO_INVALID) {
-                                opOK = FALSE;
-                            }
-                        } break;
-
-                        case I_ARGS_CSR_REG: {
-                            csr = Asm_ParseCsrOperand(args[0]);
-                            gprD = Asm_ParseRegOperand(args[1]);
-                            if (csr == -1 || gprD == -1) {
-                                opOK = FALSE;
-                            }
-                        } break;
-
-                        case I_ARGS_REG_CSR: {
-                            gprS = Asm_ParseRegOperand(args[0]);
-                            csr = Asm_ParseCsrOperand(args[1]);
-                            if (csr == -1 || gprS == -1) {
-                                opOK = FALSE;
-                            }
-                        } break;
-
-                        case I_ARGS_DOP: {
-                            ao = Asm_ParseDataOperand(args[0]);
-                            if (ao->ao_type == AO_INVALID) {
-                                opOK = FALSE;
-                            }
-                        } break;
-                    }
-                    if (opOK == FALSE) {
-                        Show_Error("Line %d: Invalid arguments for instruction '%s':\n %s", linenum, instr, line);
-                    }
-                }
-     
-                /*
-                 * Parse instructions
-                 * [x] halt
-                 * [x] int
-                 * [x] iret
-                 * [x] call
-                 * [x] ret
-                 * [x] jmp
-                 * [x] beq
-                 * [x] bne
-                 * [x] bgt
-                 * [x] push
-                 * [x] pop
-                 * [x] xchg
-                 * [x] add
-                 * [x] sub
-                 * [x] mul
-                 * [x] div
-                 * [x] not
-                 * [x] and 
-                 * [x] or
-                 * [x] xor
-                 * [x] shl
-                 * [x] shr
-                 * [x] ld
-                 * [x] st
-                 * [x] csrrd
-                 * [x] csrwr
-                 * [x] probe
-                 */
-                if (opOK) {
-                    int opCode = Asm_InstrList[idx].i_op_code;
-                    int instrId = Asm_InstrList[idx].i_instr_id;
-                    switch (instrId) {
-                        // Unknown instruction
-                        default: {
-                            Show_Error("Line %d: Unknown instruction '%s':\n %s", linenum, instr, line);
-                        } break;
-
-                        // Halt instruction
-                        case I_HALT: {
-                            Asm_PushHalt(elf);
-                        } break;
-
-                        // Software interrupt
-                        case I_INT: {
-                            Asm_PushInt(elf);
-                        } break;
-
-                        // Return from interrupt routine
-                        case I_IRET: {
-                            Asm_PushIret(elf);
-                        } break;
-
-                        // jmp instruction
-                        case I_JMP: {
-                            switch (ao->ao_type) {
-                                // jmp lit
-                                case AO_LIT: {
-                                    Asm_PushJmpLiteral(elf, ao->ao_lit);
-                                } break;
-
-                                // jmp sym
-                                case AO_SYM: {
-                                    Asm_PushJmpSymbol(elf, ao->ao_sym);
-                                } break;
-                            } 
-                        } break;
-
-                        // beq instruction
-                        case I_BEQ: {
-                            switch (ao->ao_type) {
-                                // beq lit
-                                case AO_LIT: {
-                                    Asm_PushBeqLiteral(elf, gprS, gprD, ao->ao_lit);
-                                } break;
-
-                                // beq sym
-                                case AO_SYM: {
-                                    Asm_PushBeqSymbol(elf, gprS, gprD, ao->ao_sym);
-                                } break;
-                            } 
-                        } break;
-
-                        // bne instruction
-                        case I_BNE: {
-                            switch (ao->ao_type) {
-                                // bne lit
-                                case AO_LIT: {
-                                    Asm_PushBneLiteral(elf, gprS, gprD, ao->ao_lit);
-                                } break;
-
-                                // bne sym
-                                case AO_SYM: {
-                                    Asm_PushBneSymbol(elf, gprS, gprD, ao->ao_sym);
-                                } break;
-                            } 
-                        } break;
-
-                        // bgt instruction
-                        case I_BGT: {
-                            switch (ao->ao_type) {
-                                // bgt lit
-                                case AO_LIT: {
-                                    Asm_PushBgtLiteral(elf, gprS, gprD, ao->ao_lit);
-                                } break;
-
-                                // bgt sym
-                                case AO_SYM: {
-                                    Asm_PushBgtSymbol(elf, gprS, gprD, ao->ao_sym);
-                                } break;
-                            } 
-                        } break;
-
-                        // call instruction
-                        case I_CALL: {
-                            switch (ao->ao_type) {
-                                // call lit
-                                case AO_LIT: {
-                                    Asm_PushCallLiteral(elf, ao->ao_lit);
-                                } break;
-
-                                // call sym
-                                case AO_SYM: {
-                                    Asm_PushCallSymbol(elf, ao->ao_sym);
-                                } break;
-                            } 
-                        } break;
-
-
-                        // ret
-                        case I_RET: {
-                            Asm_PushRet(elf);
-                        } break;
-
-                        // push %gprD
-                        case I_PUSH: {
-                            Asm_PushStackPush(elf, gprD);
-                        } break;
-
-                        // pop %gprD
-                        case I_POP: {
-                            Asm_PushStackPop(elf, gprD);
-                        } break;
-
-                        // xchg %gprS, %gprD
-                        case I_XCHG: {
-                            Asm_PushXchg(elf, gprS, gprD);
-                        } break;
-
-                        // not %gprD
-                        case I_NOT: {
-                            Asm_PushNot(elf, gprD);
-                        } break;
-
-                        // ALU instructions
-                        // alu %gprS, %gprD
-                        case I_ADD:
-                        case I_SUB:
-                        case I_MUL:
-                        case I_DIV:
-                        case I_AND:
-                        case I_OR:
-                        case I_XOR:
-                        {
-                            Asm_PushALU(elf, opCode, gprS, gprD);
-                        } break;
-
-                        // Load instruction
-                        case I_LD: {
-                            switch (ao->ao_type) {
-                                // ld $lit, %gprD
-                                case AO_LIT: {
-                                    Asm_PushLoadLiteralValue(elf, ao->ao_lit, gprD);
-                                } break;
-
-                                // ld $sym, %gprD
-                                case AO_SYM: {
-                                    Asm_PushLoadSymbolValue(elf, ao->ao_sym, gprD);
-                                } break;
-
-                                // ld lit, %gprD
-                                case AO_MEM_LIT: {
-                                    Asm_PushLoadMemLiteralValue(elf, ao->ao_lit, gprD);
-                                } break;
-
-                                // ld sym, %gprD
-                                case AO_MEM_SYM: {
-                                    Asm_PushLoadMemSymbolValue(elf, ao->ao_sym, gprD);
-                                } break;
-
-                                // ld %reg, %gprD
-                                case AO_REG: {
-                                    Asm_PushLoadReg(elf, ao->ao_reg, gprD);
-                                } break;
-
-                                // ld [%gprS], %gprD
-                                case AO_MEM_REG: {
-                                    Asm_PushLoadMemRegDisp(elf, ao->ao_reg, 0, gprD);
-                                } break;
-
-                                // ld [%gprS + lit], %gprD
-                                case AO_MEM_REG_LIT: {
-                                    Asm_PushLoadMemRegDisp(elf, ao->ao_reg, ao->ao_lit, gprD);
-                                } break;
-
-                                // ld [%gprS + sym], %gprD
-                                case AO_MEM_REG_SYM: {
-                                    Asm_PushLoadMemRegSymbolDisp(elf, ao->ao_reg, ao->ao_sym, gprD);
-                                } break;
-                            }
-                        } break;
-
-                        // Store instruction
-                        case I_ST: {
-                            switch (ao->ao_type) {
-                                // st %gprS, $lit
-                                case AO_LIT: {
-                                    Asm_PushStoreMemAddr(elf, gprS, ao->ao_lit);
-                                } break;
-
-                                // st %gprS, $sym
-                                case AO_SYM: {
-                                    Asm_PushStoreSymbolMemAddr(elf, gprS, ao->ao_sym);
-                                } break;
-
-                                // st %gprS, lit
-                                case AO_MEM_LIT: {
-                                    Asm_PushStoreAddr(elf, gprS, ao->ao_lit);
-                                } break;
-
-                                // st %gprS, sym
-                                case AO_MEM_SYM: {
-                                    Asm_PushStoreSymbolAddr(elf, gprS, ao->ao_sym);
-                                } break;
-
-                                // st %gprS, %gprD
-                                case AO_REG: {
-                                    Asm_PushStoreReg(elf, gprS, ao->ao_reg);
-                                } break;
-
-                                // st %gprS, [%gprD]
-                                case AO_MEM_REG: {
-                                    Asm_PushStoreMemRegDisp(elf, gprS, ao->ao_reg, 0);
-                                } break;
-
-                                // st %gprS, [%gprD + lit]
-                                case AO_MEM_REG_LIT: {
-                                    Asm_PushStoreMemRegDisp(elf, gprS, ao->ao_reg, ao->ao_lit);
-                                } break;
-
-                                // st %gprS, [%gprD + sym]
-                                case AO_MEM_REG_SYM: {
-                                    Asm_PushStoreMemRegSymbolDisp(elf, gprS, ao->ao_reg, ao->ao_sym);
-                                } break;
-                            }
-                        } break;
-
-                        case I_PROBE: {
-                            switch (ao->ao_type) {
-                                // probe $lit
-                                case AO_MEM_LIT:
-                                case AO_LIT: {
-                                    Asm_PushProbeLit(elf, ao->ao_lit);
-                                } break;
-
-                                // probe %reg
-                                case AO_REG: {
-                                    Asm_PushProbeReg(elf, ao->ao_reg);
-                                } break;
-
-                                // probe [%reg]
-                                case AO_MEM_REG: {
-                                    Asm_PushProbeMemRegDisp(elf, ao->ao_reg, 0);
-                                } break;
-
-                                // probe [%reg + disp]
-                                case AO_MEM_REG_LIT: {
-                                    Asm_PushProbeMemRegDisp(elf, ao->ao_reg, ao->ao_lit);
-                                } break;
-
-                                // probe all
-                                case AO_MEM_SYM: {
-                                    if (Str_Equals(ao->ao_sym, "all")) {
-                                        Asm_PushProbeAll(elf);
-                                    } else {
-                                        Show_Error("Line %d: Unknown option '%s' for instruction:\n %s", linenum, ao->ao_sym, instr, line);
-                                    }
-                                } break;
-                            }
-                        } break;
-
-                        // csrrd %csr, %gprD
-                        case I_CSRRD: {
-                            Asm_PushCsrrd(elf, csr, gprD);
-                        } break;
-
-                        // csrwr %gprS, %csr
-                        case I_CSRWR: {
-                            Asm_PushCsrwr(elf, gprS, csr);
-                        } break;
-                    }
-                }
-
-                //Free memory
-                if (ao) {
-                    Asm_OperandDestroy(ao);
-                }
+            // Handle instructions and directives
+            if (Str_RegexMatch(linebuf, X_EXTRACT_DIREC, ARR_SIZE(rm), rm)) {
+                // Handle directive
+                direc = Str_Substr(linebuf, rm[1].rm_so, rm[1].rm_eo);
+                other = Str_Substr(linebuf, rm[2].rm_so, rm[2].rm_eo);
+                Asm_AddDirective(elf, direc, other);
+            } else if (Str_RegexMatch(linebuf, X_EXTRACT_INSTR, ARR_SIZE(rm), rm)) {
+                // Handle instruction
+                instr = Str_Substr(linebuf, rm[1].rm_so, rm[1].rm_eo);
+                other = Str_Substr(linebuf, rm[2].rm_so, rm[2].rm_eo);
+                Asm_AddInstruction(elf, instr, other);
             }
         } while (0);
 
         // Free memory
+        if (linebuf)
+            free(linebuf);
         if (label)
             free(label);
         if (direc)
@@ -1733,71 +2089,31 @@ void Asm_Compile(Elf_Builder *elf, FILE *input, int flags)
             free(instr);
         if (other) 
             free(other);
-        for (int i = 0; i < argc; i++)
-            free(args[i]);
-        argc = 0;
     }
-    // Free memory
-    if (line)
-        free(line);
 
     // Parse Equ expressions
     int idx;
-    char *matches[MAX_REGEX_MATCHES] = { 0 };
-    char *rpn[MAX_REGEX_MATCHES] = { 0 }; // Reverse polish notation
-    char *opStack[MAX_REGEX_MATCHES] = { 0 };
-    int rpnCount = 0;
-    int opStackHead = 0;
     for (idx = 0; idx < Asm_EquCount; idx++) {
-        // Trim symbol and expression
-        Asm_EquType ei = Asm_EquList[idx];
-        int equLine = ei.ei_line;
-        char *equSymName = ei.ei_sym;
-        char *equExpression = ei.ei_expr;
-        Str_Trim(equSymName);
-        Str_Trim(equExpression);
-        
-        // Split expression
-        int count;
-        if ((count = Str_RegexSplit(equExpression, X_OPERATOR, ARR_SIZE(matches), matches)) > 0) {
-            if (count == 1) {
-                // Trivial expression
-                Asm_OperandType *ao = Asm_ParseBranchOperand(equExpression);
-                switch (ao->ao_type) {
-                    // Literal value
-                    case AO_LIT: {
-                        Asm_Word value = ao->ao_lit;
-                        Asm_AddAbsSymbol(elf, equSymName, value);
-                    } break;
-
-                    // Symbol value (symbol must be defined)
-                    case AO_SYM: {
-                        char *symName = equExpression;
-                        if (Elf_SymbolExists(elf, symName)) {
-                            Elf_Sym *sym = Elf_UseSymbol(elf, symName);
-                            if (sym->st_shndx != SHN_UNDEF)  {
-                                Asm_AddAbsSymbol(elf, equSymName, sym->st_value);
-                            } else {
-                                Show_Error(" Line %d: Symbol '%s' is undefined:\n\t.equ %s, %s", equLine, symName, equSymName, symName);
-                            }
-                        } else {
-                            Show_Error(" Line %d: Symbol '%s' doesn't exist:\n\t.equ %s, %s", equLine, symName, equSymName, symName);
-                        }
-                    } break;
-                }
-                Asm_OperandDestroy(ao);
-            } else if (count > 1) {
-                // Composite expression.
-                // Shunting-Yard algorithm creating reverse polish notation
-                int i;
-                for (i = 0; i < count; i++) {
-                    char *elem = matches[i];
-                    Str_Trim(elem);
-                    //printf("'%s'\n", elem);
-                }
-            }
-        }
+        // Fetch equ
+        Asm_EquType equ = Asm_EquList[idx];
+        Asm_AddEquSymbol(elf, equ.ei_sym, equ.ei_expr);
     }
+
+    // Free memory
+    for (idx = 0; idx < Asm_EquCount; idx++) {
+        Asm_EquType equ = Asm_EquList[idx];
+        if (equ.ei_sym)
+            free(equ.ei_sym);
+        if (equ.ei_expr)
+            free(equ.ei_expr);
+    }
+    if (Asm_Line) {
+        free(Asm_Line);
+        Asm_Line = NULL;
+    }
+
+    // Finish
+    Asm_CurrentMode = ASM_MODE_DONE;
 }
 
 static void show_help() 
@@ -1837,7 +2153,7 @@ int main(int argc, char *argv[])
         } else if (Str_Equals(option, "-o")) {
             // -o output option
             if (i + 1 == argc) {
-                Show_Error("Assembler error: -o Option requires an argument");
+                Show_Error("-o Option requires an argument");
                 break;
             }
             char *output_path = argv[i + 1];
@@ -1883,7 +2199,7 @@ int main(int argc, char *argv[])
         Elf_Init(&elf);
 
         // Compile input
-        Asm_Compile(&elf, input, F_ASM_DEBUG);
+        Asm_Compile(&elf, input, F_ASM_NONE);
 
         // Testing only
         //Elf_WriteDump(&elf, stdout);

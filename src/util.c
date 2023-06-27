@@ -417,7 +417,7 @@ int Str_IsEmpty(const char *str)
 {
     while (*str) {
         if (! isspace(*str)) 
-            break;
+            return 0;
         str++;
     }
     return 1;

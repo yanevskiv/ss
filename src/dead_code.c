@@ -1734,3 +1734,383 @@ void Str_BufferDestroy(Str_Buffer *buffer)
     //}
     return 0;
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    int idx;
+    char *matches[MAX_REGEX_MATCHES] = { 0 };
+    //char *rpn[MAX_REGEX_MATCHES] = { 0 }; // Reverse polish notation
+    //char *opStack[MAX_REGEX_MATCHES] = { 0 };
+
+    Asm_EquElem equRpn[MAX_REGEX_MATCHES];
+    Asm_EquElem equStack[MAX_REGEX_MATCHES];
+    Asm_EquOpInfo equOpStack[MAX_REGEX_MATCHES];
+    int rpnCount = 0;
+    int stackCount = 0;
+    int opStackCount = 0;
+
+
+    for (idx = 0; idx < Asm_EquCount; idx++) {
+        // Trim symbol and expression
+        Asm_EquType ei = Asm_EquList[idx];
+        int equLine = ei.ei_line;
+        char *equSymName = ei.ei_sym;
+        char *equExpression = ei.ei_expr;
+        Str_Trim(equSymName);
+        Str_Trim(equExpression);
+        
+        // Split expression
+        int count;
+        if ((count = Str_RegexSplit(equExpression, X_OPERATOR, ARR_SIZE(matches), matches)) > 0) {
+            if (count == 1) {
+                // Trivial expression
+                Asm_OperandType *ao = Asm_ParseBranchOperand(equExpression);
+                switch (ao->ao_type) {
+                    // Literal value
+                    case AO_LIT: {
+                        Asm_Word value = ao->ao_lit;
+                        Asm_AddAbsSymbol(elf, equSymName, value);
+                    } break;
+
+                    // Symbol value (symbol must be defined)
+                    case AO_SYM: {
+                        char *symName = equExpression;
+                        if (Elf_SymbolExists(elf, symName)) {
+                            Elf_Sym *sym = Elf_UseSymbol(elf, symName);
+                            if (sym->st_shndx != SHN_UNDEF)  {
+                                Asm_AddAbsSymbol(elf, equSymName, sym->st_value);
+                            } else {
+                                Show_Error(" Line %d: Symbol '%s' is undefined:\n\t.equ %s, %s", equLine, symName, equSymName, symName);
+                            }
+                        } else {
+                            Show_Error(" Line %d: Symbol '%s' doesn't exist:\n\t.equ %s, %s", equLine, symName, equSymName, symName);
+                        }
+                    } break;
+                }
+                Asm_OperandDestroy(ao);
+            } else if (count > 1) {
+                // Composite expression.
+                // Shunting-Yard algorithm creating reverse polish notation
+                int i, equError = 0;
+                for (i = 0; i < count && ! equError; i++) {
+                    char *elem = matches[i];
+                    Str_Trim(elem);
+                    printf("'%s'\n", elem);
+                    if (! Asm_EquIsOperator(elem)) {
+                        Asm_EquElem ee;
+                        Asm_OperandType *ao = Asm_ParseBranchOperand(elem);
+                        switch (ao->ao_type) {
+                            case AO_LIT: {
+                                ee.ee_type = EQU_EE_LIT;
+                                ee.ee_lit = ao->ao_lit;
+                            } break;
+                            case AO_SYM: {
+                                char *symName = ao->ao_sym;
+                                ee.ee_type = EQU_EE_SYM;
+                                ee.ee_sym = strdup(symName);
+                                //if (Elf_SymbolExists(elf, symName)) {
+                                //    Elf_Sym *sym = Elf_UseSymbol(elf, symname);
+                                //    if (sym->st_shndx != SHN_UNDEF) {
+
+                                //    }
+                                //} else {
+                                //    Show_Error(" Line %d: Symbol '%s' doesn't exist:\n\t.equ %s, %s", equLine, symName, equSymName, symName);
+                                //}
+                            } break;
+                            default : {
+                                Show_Error("Line %d: Invalid equ expression", equLine);
+                                equError = 1;
+                            };
+                        }
+                        Asm_OperandDestroy(ao);
+                        if (! equError) {
+                            equRpn[rpnCount++] = ee;
+                        }
+                    } else {
+                        // Pop operators from the stack
+                        while (opStackCount > 0 && Asm_EquOpPrecedenceLte()) {
+
+                            opStackCount -= 1;
+                        }
+                    }
+                }
+
+                // Parse rpn
+                for (i = 0; i < rpnCount && !equError; i++)  {
+                    Asm_EquElem ee = equRpn[i];
+                    switch (ee.ee_type) {
+                        case EQU_EE_LIT: {
+                            printf("Literal value %08x\n", ee.ee_lit);
+                        } break;
+                        case EQU_EE_SYM: {
+                            printf("Symbol value %s\n", ee.ee_sym);
+                        } break;
+                        case EQU_EE_OP: {
+
+                        } break;
+                    }
+                }
+
+            }
+        }
+    }
+
+
+
+
+
+/*
+typedef enum {
+    O_POS, // + a
+    O_NEG, // - a
+    O_ADD, // a + b
+    O_SUB, // a - b
+    O_MUL, // a * b
+    O_DIV, // a / b
+    O_MOD, // a % b
+    O_NOT, // ~ a
+    O_AND, // a & b
+    O_OR,  // a | b
+    O_XOR, // a ^ b
+    O_SHL, // a << b
+    O_SHR, // a >> b
+    O_LBR, // (
+    O_RBR  // )
+
+    // O_LOGIC_NOT, // ! a
+    // O_LOGIC_AND,     // a && b
+    // O_LOGIC_OR,      // a || b
+    // O_LOGIC_XOR,     // a ^^ b
+    // O_LOGIC_EQ,      // a == b
+    // O_LOGIC_NEQ,     // a != b
+    // O_LOGIC_GT,      // a > b
+    // O_LOGIC_LT,      // a < b
+    // O_LOGIC_GTE,     // a >= b
+    // O_LOGIC_LTE,     // a <= b
+    
+    
+} Asm_EquOpType;
+
+typedef struct {
+    char *eo_sym;    // symbol
+    Asm_EquOpType eo_type; // operator
+    int eo_prec;           // precedence
+    int eo_argc;           // arity
+} Asm_EquOpInfo;
+
+Asm_EquOpInfo Asm_EquOpList[] = {
+    { "+",  O_POS, 2,  1 },
+    { "-",  O_NEG, 2,  1 },
+    { "~",  O_NOT, 2,  1 },
+    { "*",  O_ADD, 3,  2 },
+    { "/",  O_DIV, 3,  2 },
+    { "%",  O_MOD, 3,  2 },
+    { "+",  O_ADD, 4,  2 },
+    { "-",  O_SUB, 4,  2 },
+    { "<<", O_SHL, 5,  2 },
+    { ">>", O_SHR, 5,  2 },
+    { "&",  O_AND, 8,  2 },
+    { "^",  O_XOR, 9,  2 },
+    { "|",  O_OR,  10, 2 },
+    { "(",  O_LBR, 15, 2 },
+    { ")",  O_RBR, 15, 2 },
+};
+
+int Asm_EquOpFindByType(Asm_EquOpType op)
+{
+    int idx;
+    for (idx = 0; idx < ARR_SIZE(Asm_EquOpList); idx++) {
+        if (op == Asm_EquOpList[idx].eo_type)
+            return idx;
+    }
+    return -1;
+}
+
+// prec(op1) <= prec(op2)
+int Asm_EquOpPrecdenceLte(Asm_EquOpType op1, Asm_EquOpType op2)
+{
+    int idx1 = Asm_EquOpFindByType(op1);
+    int idx2 = Asm_EquOpFindByType(op2);
+    if (idx1 != -1 && idx2 != -1)
+        return Asm_EquOpList[idx1].eo_prec < Asm_EquOpList[idx2].eo_prec;
+    return -1;
+    
+}
+
+typedef enum {
+    EQU_EE_OP,
+    EQU_EE_SYM,
+    EQU_EE_LIT
+} Asm_EquElemType;
+
+typedef struct {
+    Asm_EquElemType ee_type;
+    union {
+        Asm_EquOpType ee_op;
+        char *ee_sym;
+        Asm_Word ee_lit;
+    };
+} Asm_EquElem;
+
+*/
+
+                /*
+                if (Str_RegexMatch(other, "(#.*)$", ARR_SIZE(matches), matches)) {
+                    Str_Cut(&other, matches[1].rm_so, matches[1].rm_eo);
+                }
+
+                // Find directive
+                int isOk = TRUE;
+                int idx = Asm_FindDirecIdx(direc);
+                if (idx == -1) {
+                    Show_Error("Line %d: Invalid directive '%s':\n %s", linenum, direc, line);
+                    isOk = FALSE;
+                }
+
+                // Extract directive argumetns and check validity
+                if (isOk)  {
+                    argc = Asm_ExtractArguments(other, args, ARR_SIZE(args));
+                    // TODO: Check arguments
+                }
+
+                // Parse directives
+                if (isOk) {
+                    Asm_DirecType direcType = Asm_DirecList[idx].d_type;
+                    switch (direcType) {
+                        // .extern
+                        // .global
+                        case D_EXTERN:
+                        case D_GLOBAL:
+                        {
+                            int i;
+                            for (i = 0; i < argc; i++) {
+                                Elf_Sym *sym = Elf_UseSymbol(elf, args[i]);
+                                sym->st_info = ELF_ST_INFO(STB_GLOBAL, ELF_ST_TYPE(sym->st_info));
+                            }
+                        } break;
+
+                        // .section name
+                        case D_SECTION:
+                        {
+                            // .section name
+                            if (argc == 1) {
+                                Elf_UseSection(elf, args[0]);
+                            } else {
+                                Show_Error("Line %d: '%s' directive requires exactly 1 argument:\n %s", linenum, direc, line);
+                            }
+                        } break;
+
+                        // .byte
+                        // .half
+                        // .word
+                        case D_BYTE:
+                        case D_HALF:
+                        case D_WORD:
+                        {
+                            // .byte lit|sym, ...
+                            // .half lit|sym, ...
+                            // .word lit|sym, ...
+                            int i;
+                            for (i = 0; i < argc; i++) {
+                                Asm_OperandType *ao = Asm_ParseBranchOperand(args[i]);
+                                if (ao->ao_type == AO_SYM) {
+                                    int relaType = 
+                                          direcType == D_BYTE ? R_SS_8
+                                        : direcType == D_HALF ? R_SS_16
+                                        : direcType == D_WORD ? R_SS_32
+                                        : R_SS_NONE;
+                                    Asm_AddRela(elf, args[i], relaType, 0);
+                                    Elf_PushWord(elf, 0);
+                                } else if (ao->ao_type == AO_LIT) {
+                                    if (direcType == D_WORD) 
+                                        Elf_PushWord(elf, ao->ao_lit);
+                                    else if (direcType == D_HALF) 
+                                        Elf_PushHalf(elf, ao->ao_lit);
+                                    else if (direcType == D_BYTE) 
+                                        Elf_PushByte(elf, ao->ao_lit);
+                                } else if (ao->ao_type == AO_INVALID) {
+                                    Show_Error("Line %d: Invalid symbol '%s':\n %s", linenum, args[i], line);
+                                }
+                                Asm_OperandDestroy(ao);
+                            }
+                        } break;
+
+                        // .skip num
+                        case D_SKIP:
+                        {
+                            if (argc == 1) {
+                                int value = Str_ParseInt(args[0]);
+                                Elf_PushSkip(elf, value, 0x00);
+                            } else {
+                                Show_Error("Line %d: '%s' directive requires exactly 1 argument:\n %s", linenum, direc, line);
+                            }
+                        } break;
+
+                        // .ascii str
+                        case D_ASCII:
+                        {
+                            if (argc == 1)  {
+                                Str_RmQuotes(args[0]);
+                                Str_UnescapeStr(args[0]);
+                                Elf_PushString(elf, args[0]);
+                            } else {
+                                Show_Error("Line %d: '%s' directive requires exactly 2 arguments:\n %s", linenum, direc, line);
+                            }
+                        } break;
+
+                        // .equ sym, expr
+                        case D_EQU:
+                        {
+                            if (argc == 2) {
+                                Asm_EquType equ = {
+                                    .ei_line = linenum,
+                                    .ei_sym = strdup(args[0]),
+                                    .ei_expr = strdup(args[1])
+                                };
+                                Asm_EquList[Asm_EquCount] = equ;
+                                Asm_EquCount += 1;
+                                //const char *symName = args[0];
+                                //Asm_Word value = Str_ParseInt(args[1]);
+                                //Asm_AddAbsSymbol(elf, symName, value);
+                            } else {
+                                Show_Error("Line %d: '%s' directive requires exactly 2 arguments:\n %s", linenum, direc, line);
+                            }
+                        } break;
+
+                        // .end
+                        case D_END:
+                        {
+                            mode = MODE_QUIT;
+                        } break;
+                    }
+                }
+
+                */
+
+// Extracts arguments and returns argc
+int Asm_ExtractArguments(char *other, char **args, int max_args)
+{
+    int argc = 0;
+    char *token = strtok(other, ",");
+    while (token) {
+        args[argc] = strdup(token);
+        Str_Trim(args[argc]);
+        argc += 1;
+        token = strtok(NULL, ",");
+    }
+    return argc;
+}
+

@@ -1,2 +1,2 @@
 #!/bin/bash
-./test/nivo-x/start.sh
+./test/nivo-c/start.sh

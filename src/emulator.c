@@ -716,7 +716,7 @@ void Emu_DebugInstr(FILE *output, Asm_OcType oc, Asm_ModType mod, Asm_RegType ra
         } break;
     }
 
-    //// Print information about registers
+    //// Print information about registers (disabled)
     //fprintf(output, "(GPR[ra=%d]=%08x GPR[rb=%d]=%08x GPR[rc=%d] disp=%d)",
     //    ra, GPR[ra],
     //    rb, GPR[rb],
@@ -1174,7 +1174,7 @@ int main(int argc, char *argv[])
     const char *input_name = argv[1];
     Emu_FlagsType flags = 
           F_EMU_NONE 
-        | F_EMU_TIMER
+        // | F_EMU_TIMER
         // | F_EMU_TERMINAL
         // | F_EMU_DEBUG
 

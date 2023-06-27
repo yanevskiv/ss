@@ -1,7 +1,9 @@
-cd test
+#!/bin/bash
+
 ASSEMBLER=../assembler
 LINKER=../linker
 EMULATOR=../emulator
+
 ${ASSEMBLER} -o main.o main.s
 ${ASSEMBLER} -o handler.o handler.s
 ${LINKER} -hex \

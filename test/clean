@@ -1,0 +1,6 @@
+#!/bin/bash
+echo "Removing .o files"
+find . -name "*.o" -delete
+echo "Removing .hex files"
+find . -name ".hex" -delete
+

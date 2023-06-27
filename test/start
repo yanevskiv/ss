@@ -1,12 +1,13 @@
 #!/bin/bash
 case "$1" in
-    nivo-a) which=nivo-a ;;
-    nivo-b) which=nivo-b ;;
-    nivo-c) which=nivo-c ;;
+    nivo-a)  which=nivo-a ;;
+    nivo-b)  which=nivo-b ;;
+    nivo-c)  which=nivo-c ;;
+    example) which=example ;;
 esac
 [ ! -z "${which}" ] && {
     cd ${which}
     ./start.sh
 } ||  {
-    echo "start { nivo-a | nivo-b | nivo-c }"
+    echo "Usage: start { nivo-a | nivo-b | nivo-c | example }"
 }

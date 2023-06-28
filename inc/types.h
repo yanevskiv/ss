@@ -479,6 +479,7 @@ typedef struct {
 
 // Equ token type
 typedef enum {
+    TOK_NONE,
     TOK_OPERATOR,
     TOK_SYMLIT
 } Equ_TokenType; 

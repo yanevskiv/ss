@@ -6,4 +6,5 @@ gcc -c -fdiagnostics-color=always -Iinc src/elf.c -o dist/elf.o
 gcc -fdiagnostics-color=always -Iinc src/assembler.c dist/elf.o dist/util.o -o assembler
 gcc -fdiagnostics-color=always -Iinc src/linker.c    dist/elf.o dist/util.o -o linker
 gcc -pthread -fdiagnostics-color=always -Iinc src/emulator.c dist/elf.o dist/util.o -o emulator 
-# ./test/start.sh devel
+# cd test/example
+# ./start.sh

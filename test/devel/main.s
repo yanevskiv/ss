@@ -4,11 +4,9 @@
 .equ tim_cfg, 0xFFFFFF10
 .equ init_sp, 0xFFFFFF00
 .section my_code
-
     ld $init_sp, %sp
     ld $handler, %r1
     csrwr %r1, %handler
-
     int
     ld $0x1, %r1
     st %r1, tim_cfg

@@ -2259,7 +2259,7 @@ int main(int argc, char *argv[])
         //Elf_WriteDump(&elf, stdout);
 
         // Write elf to output
-        if (flags | F_ASM_HEX)  {
+        if (flags & F_ASM_HEX)  {
             Elf_WriteHex(&elf, output);
         } else {
             Elf_WriteDump(&elf, output);

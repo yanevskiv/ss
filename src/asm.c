@@ -4,7 +4,7 @@
 #include <assert.h>
 #include <regex.h>
 #include <ctype.h>
-#include <assembler.h>
+#include <asm.h>
 #include <elf.h>
 #include <stdarg.h>
 #include <util.h>

@@ -1,48 +1,48 @@
 CC = gcc
 SRC_DIR = src
-INC_DIR = inc
+INC_DIR = h
 OBJ_DIR = dist
 
-ASSEMBLER = assembler
-LINKER    = linker
-EMULATOR  = emulator
+ASM = asm
+LD  = ld
+EMU = emu
 
 CFLAGS = -fdiagnostics-color=always -I$(INC_DIR)
 
 ASM_CFLAGS =
-LNK_CFLAGS =
+LD_CFLAGS  =
 EMU_CFLAGS = -pthread
 
-ASM_OBJ_LIST = assembler.o util.o elf.o
-LNK_OBJ_LIST = linker.o util.o elf.o
-EMU_OBJ_LIST = emulator.o util.o elf.o
+ASM_OBJ_LIST = asm.o util.o elf.o
+LD_OBJ_LIST  = ld.o util.o elf.o
+EMU_OBJ_LIST = emu.o util.o elf.o
 
 ASM_OBJS = $(addprefix $(OBJ_DIR)/,$(ASM_OBJ_LIST))
-LNK_OBJS = $(addprefix $(OBJ_DIR)/,$(LNK_OBJ_LIST))
+LD_OBJS  = $(addprefix $(OBJ_DIR)/,$(LD_OBJ_LIST))
 EMU_OBJS = $(addprefix $(OBJ_DIR)/,$(EMU_OBJ_LIST))
 
 
-all: $(ASSEMBLER) $(LINKER) $(EMULATOR)
+all: $(ASM) $(LD) $(EMU)
 
-$(ASSEMBLER): $(ASM_OBJS) | Makefile
-	$(CC) $(CFLAGS) $(ASM_CFLAGS) -o $(ASSEMBLER) $^
+$(ASM): $(ASM_OBJS) | Makefile
+	$(CC) $(CFLAGS) $(ASM_CFLAGS) -o $(ASM) $^
 
-$(LINKER): $(LNK_OBJS) | Makefile
-	$(CC) $(CFLAGS) $(LNK_CFLAGS) -o $(LINKER) $^
+$(LD): $(LD_OBJS) | Makefile
+	$(CC) $(CFLAGS) $(LD_CFLAGS) -o $(LD) $^
 
-$(EMULATOR): $(EMU_OBJS) | Makefile
-	$(CC) $(CFLAGS) $(EMU_CFLAGS) -o $(EMULATOR) $^
+$(EMU): $(EMU_OBJS) | Makefile
+	$(CC) $(CFLAGS) $(EMU_CFLAGS) -o $(EMU) $^
 
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c | Makefile $(OBJ_DIR)
-	$(CC) -c $(CFLAGS) -o $@ $< 
+	$(CC) -c $(CFLAGS) -o $@ $<
 
 $(OBJ_DIR):
 	mkdir -p $(OBJ_DIR)
 
 clean:
-	rm -f $(ASSEMBLER)
-	rm -f $(LINKER)
-	rm -f $(EMULATOR)
+	rm -f $(ASM)
+	rm -f $(LD)
+	rm -f $(EMU)
 	rm -rf $(OBJ_DIR)
 
 .PHONY: clean

@@ -1,5 +1,5 @@
 #include <stdlib.h>
-#include <emulator.h>
+#include <emu.h>
 #include <assert.h>
 #include <elf.h>
 #include <string.h>

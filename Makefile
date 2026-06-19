@@ -3,19 +3,19 @@ SRC_DIR = src
 INC_DIR = h
 OBJ_DIR = dist
 
-ASM = asm
-LD  = ld
-EMU = emu
+ASM = asembler
+LD  = linker
+EMU = emulator
 
-CFLAGS = -fdiagnostics-color=always -I$(INC_DIR)
+CFLAGS = -fdiagnostics-color=always -I$(INC_DIR) -O2
 
 ASM_CFLAGS =
 LD_CFLAGS  =
 EMU_CFLAGS = -pthread
 
-ASM_OBJ_LIST = asm.o util.o elf.o
-LD_OBJ_LIST  = ld.o util.o elf.o
-EMU_OBJ_LIST = emu.o util.o elf.o
+ASM_OBJ_LIST = asembler.o util.o elf.o
+LD_OBJ_LIST  = linker.o util.o elf.o
+EMU_OBJ_LIST = emulator.o util.o elf.o
 
 ASM_OBJS = $(addprefix $(OBJ_DIR)/,$(ASM_OBJ_LIST))
 LD_OBJS  = $(addprefix $(OBJ_DIR)/,$(LD_OBJ_LIST))
